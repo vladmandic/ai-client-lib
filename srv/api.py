@@ -88,8 +88,13 @@ def mount(server: Server, prefix: str = ''):
         _payload = json.dumps(payload, indent=2) if isinstance(payload, (dict, list)) else payload
 
         # kie signature
-        result_json = json.loads(payload.get('data', {}).get('resultJson', '{}'))
-        _urls = result_json.get('resultUrls', [])
+        _data = payload.get('data', {})
+        _result_json = json.loads(_data.get('resultJson', '{}'))
+        _urls = _result_json.get('resultUrls', [])
+
+        log.warning(f'DATA: {_data}')
+        log.warning(f'RESULT_JSON: {_result_json}')
+        log.warning(f'URLS: {_urls}')
 
         log.info(f"Webhook(headers={_headers})")
         log.info(f"Webhook(payload={_payload})")
