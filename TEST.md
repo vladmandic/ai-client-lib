@@ -115,4 +115,4 @@
 
 ## kie i2v webhook
 
-> python test/kie.py --model bytedance/seedance-2-5 --prompt "sylish anime-style photo of a young woman dancing on a beach" --kwargs '{ "aspect_ratio": "auto", "generate_audio": false, "resolution": "480p", "aspect_ratio": "adaptive", "duration": 5, "output_format": "mp4", "web_search": false, "nsfw_checker": false }'
+python test/kie.py --model "bytedance/seedance-2-5" --prompt "sylish anime-style photo of a young woman dancing on a beach. reference @Image1 for character and @Image2 for background" --kwargs '{ "aspect_ratio": "auto", "generate_audio": false, "resolution": "480p", "aspect_ratio": "adaptive", "duration": 5, "output_format": "mp4", "web_search": false, "nsfw_checker": false, "reference_image_urls": ["https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/samples/cartoon.jpg", "https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/samples/bg-autumn.jpeg"] }' --webhook "https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/webhook"
