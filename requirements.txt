@@ -1,0 +1,12 @@
+# base
+fastapi
+requests
+uvicorn
+urllib3
+PySocks
+
+# utils
+uv
+rich
+ruff
+pylint
