@@ -1,10 +1,7 @@
-import mimetypes
 import os
-import re
+import json
 from datetime import UTC, datetime
-from pathlib import Path
 from threading import Lock
-from urllib.parse import urlparse
 import urllib3
 from fastapi import FastAPI, Header, Request, status
 from fastapi.responses import FileResponse
@@ -87,5 +84,10 @@ def mount(server: Server, prefix: str = ''):
         }
         with lock:
             getattr(app.state, WEBHOOK_EVENTS).append(event)
-        log.info(f"Webhook(headers={headers} payload={payload})")
+        _headers = json.dumps(headers, indent=2) if isinstance(headers, (dict, list)) else headers
+        _payload = json.dumps(payload, indent=2) if isinstance(payload, (dict, list)) else payload
+        _urls = payload.get('resultJson', {}).get('resultUrls', [])
+        log.info(f"Webhook(headers={_headers})")
+        log.info(f"Webhook(payload={_payload})")
+        log.info(f"Webhook(urls={_urls})")
         return { "accepted": True }

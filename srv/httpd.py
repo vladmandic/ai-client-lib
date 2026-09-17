@@ -67,7 +67,7 @@ class HTTPD:
         def monitor():
             while True:
                 if self.app and self.app.state._state: # pylint: disable=protected-access
-                    log.debug(f'FastAPI(state={vars(self.app.state)} uptime={time.time() - self.time:.2f})')
+                    log.debug(f'FastAPI(uptime={time.time() - self.time:.2f})')
                 time.sleep(self.monitor)
 
         @contextlib.asynccontextmanager
