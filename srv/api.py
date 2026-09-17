@@ -86,7 +86,9 @@ def mount(server: Server, prefix: str = ''):
             getattr(app.state, WEBHOOK_EVENTS).append(event)
         _headers = json.dumps(headers, indent=2) if isinstance(headers, (dict, list)) else headers
         _payload = json.dumps(payload, indent=2) if isinstance(payload, (dict, list)) else payload
-        _urls = payload.get('resultJson', {}).get('resultUrls', [])
+        _urls = []
+        if len(_urls) == 0:
+            _urls = payload.get('data', {}).get('resultJson', {}).get('resultUrls', []) # kie signature
         log.info(f"Webhook(headers={_headers})")
         log.info(f"Webhook(payload={_payload})")
         log.info(f"Webhook(urls={_urls})")
