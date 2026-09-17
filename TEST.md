@@ -44,6 +44,6 @@
 ```
 
 > python test/kie.py --model bytedance/seedance-2-5 --prompt "sylish anime-style photo of a young woman dancing on a beach" --kwargs '{ "aspect_ratio": "auto", "generate_audio": false, "resolution": "480p", "aspect_ratio": "adaptive", "duration": 5, "output_format": "mp4", "web_search": false, "nsfw_checker": false }'
-```log
 
-```
+
+python test/kie.py --model bytedance/seedance-2-5 --prompt "sylish anime-style photo of a young woman dancing on a beach" --kwargs '{ "aspect_ratio": "auto", "generate_audio": false, "resolution": "480p", "aspect_ratio": "adaptive", "duration": 5, "output_format": "mp4", "web_search": false, "nsfw_checker": false }'

@@ -33,36 +33,6 @@ def _media_urls(value):
             yield from _media_urls(child)
 
 
-def _safe_filename(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._") or "webhook"
-
-
-def _save_media(app, provider: str, request_id: str, payload: dict) -> list[str]:
-    urls = list(dict.fromkeys(_media_urls(payload)))
-    if not urls:
-        return []
-    media_dir = Path(getattr(app.state, WEBHOOK_MEDIA_DIR))
-    media_dir.mkdir(parents=True, exist_ok=True)
-    saved = []
-    for index, url in enumerate(urls):
-        try:
-            response = getattr(app.state, WEBHOOK_POOL).request("GET", url, preload_content=True)
-            if response.status >= 400:
-                raise RuntimeError(f"HTTP {response.status}")
-            suffix = Path(urlparse(url).path).suffix
-            if not suffix:
-                suffix = mimetypes.guess_extension(response.headers.get("Content-Type", "")) or ".bin"
-            stem = f"{_safe_filename(provider)}-{_safe_filename(request_id)}"
-            if len(urls) > 1:
-                stem = f"{stem}-{index + 1}"
-            destination = media_dir / f"{stem}{suffix}"
-            destination.write_bytes(response.data)
-            saved.append(str(destination))
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            log.warning("WebhookMedia(url=%s saved=False error=%s)", url, error)
-    return saved
-
-
 def mount(server: Server, prefix: str = ''):
     app: FastAPI = server.app
     if not hasattr(app.state, WEBHOOK_EVENTS):
@@ -107,31 +77,15 @@ def mount(server: Server, prefix: str = ''):
         response_model=dict,
         response_description="webhook accepted",
     )
-    async def post_webhook(
-        payload: dict,
-        provider: str | None = Header(default=None, alias="X-Provider"),
-    ):
-        request_id = payload.get("request_id") or payload.get("taskId") or payload.get("id")
-        provider = provider or payload.get("provider") or "unknown"
-        saved_media = _save_media(app, provider, str(request_id or "unknown"), payload)
+    async def post_webhook(payload: dict, request: Request):
+        # saved_media = _save_media(app, provider, str(request_id or "unknown"), payload)
+        headers = dict(request.headers)
         event = {
             "received_at": datetime.now(UTC).isoformat(),
-            "provider": provider,
-            "request_id": str(request_id) if request_id is not None else None,
-            "status": payload.get("status") or payload.get("state"),
+            "headers": headers,
             "payload": payload,
-            "saved_media": saved_media,
         }
         with lock:
             getattr(app.state, WEBHOOK_EVENTS).append(event)
-        log.info(
-            "Webhook(provider=%s request_id=%s status=%s accepted=True)",
-            provider,
-            event["request_id"],
-            event["status"],
-        )
-        return {
-            "accepted": True,
-            "request_id": event["request_id"],
-            "saved_media": saved_media,
-        }
+        log.info(f"Webhook(headers={headers} payload={payload})")
+        return { "accepted": True }
