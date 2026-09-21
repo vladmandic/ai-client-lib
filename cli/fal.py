@@ -53,7 +53,15 @@ class Fal(ProviderHttpClient):
             request_id=request_id,
             status="queued",
         )
-        return self._poll(model, request_id, record.correlation_id)
+        status_url = response.get("status_url") if isinstance(response, dict) else None
+        response_url = response.get("response_url") if isinstance(response, dict) else None
+        return self._poll(
+            model,
+            request_id,
+            record.correlation_id,
+            status_url=status_url,
+            response_url=response_url,
+        )
 
     def submit_async(
         self,
@@ -122,12 +130,23 @@ class Fal(ProviderHttpClient):
         self.resources.stats.update(record.correlation_id, status=normalized_status, finish=True)
         return self._normalize(response, record.correlation_id, normalized_status, request_id)
 
-    def _poll(self, model: str, request_id: str, correlation_id: str) -> Response:
+    def _poll(
+        self,
+        model: str,
+        request_id: str,
+        correlation_id: str,
+        status_url: str | None = None,
+        response_url: str | None = None,
+    ) -> Response:
+        if status_url is None:
+            status_url = f"{self.base_url}/{model}/requests/{request_id}/status"
+        if response_url is None:
+            response_url = f"{self.base_url}/{model}/requests/{request_id}"
         deadline = time.monotonic() + self.config.poll_timeout
         while time.monotonic() < deadline:
             response = self._request(
                 "GET",
-                f"{self.base_url}/{model}/requests/{request_id}/status",
+                status_url,
                 correlation_id,
                 "status",
             )
@@ -136,7 +155,7 @@ class Fal(ProviderHttpClient):
             if status == "completed":
                 result = self._request(
                     "GET",
-                    f"{self.base_url}/{model}/requests/{request_id}",
+                    response_url,
                     correlation_id,
                     "result",
                 )

@@ -3,6 +3,7 @@
 ## kie t2i submit
 
 > python test/kie.py --model z-image --prompt "sylish arcane-style photo of a sexy young woman on a beach" --kwargs '{ "nsfw_checker": false, "aspect_ratio": "1:1"}'
+
 ```json
 11:22:53-158735 INFO     Submit: model="z-image" prompt="sylish arcane-style photo of a sexy young woman on a beach" image="None" video="None" workflow="None" kwargs="{'nsfw_checker': False, 'aspect_ratio': '1:1'}"
 11:22:53-161330 INFO     Client: Client(provider=kie config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
@@ -115,4 +116,4 @@
 
 ## kie i2v webhook
 
-python test/kie.py --model "bytedance/seedance-2-5" --prompt "sylish anime-style photo of a young woman dancing on a beach. reference @Image1 for character and @Image2 for background" --kwargs '{ "aspect_ratio": "auto", "generate_audio": false, "resolution": "480p", "aspect_ratio": "adaptive", "duration": 5, "output_format": "mp4", "web_search": false, "nsfw_checker": false, "reference_image_urls": ["https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/samples/cartoon.jpg", "https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/samples/bg-autumn.jpeg"] }' --webhook "https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/webhook"
+> python test/kie.py --model "bytedance/seedance-2-5" --prompt "sylish anime-style photo of a young woman dancing on a beach. reference @Image1 for character and @Image2 for background" --kwargs '{ "aspect_ratio": "auto", "generate_audio": false, "resolution": "480p", "aspect_ratio": "adaptive", "duration": 5, "output_format": "mp4", "web_search": false, "nsfw_checker": false, "reference_image_urls": ["https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/samples/cartoon.jpg", "https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/samples/bg-autumn.jpeg"] }' --webhook "https://6lfizm6y1y8w72-8080.proxy.runpod.net/api/webhook"

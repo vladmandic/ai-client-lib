@@ -15,8 +15,8 @@ from urllib3.filepost import encode_multipart_formdata
 from .core import (
     CapabilityError,
     ClientConfig,
-    Response,
     ProviderHttpClient,
+    Response,
     validate_workflow_inputs,
 )
 

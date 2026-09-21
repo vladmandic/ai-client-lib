@@ -1,4 +1,4 @@
-"""Test script for KIE provider using submit."""
+"""Test script for PixVerse provider using submit."""
 
 # pylint: disable=wrong-import-position,duplicate-code,assignment-from-no-return
 
@@ -11,7 +11,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cli.kie import Kie
+from cli.pixverse import Pixverse
 from srv.logger import init, log
 
 
@@ -30,8 +30,8 @@ def _parse_kwargs(raw: str | None) -> dict[str, Any]:
 def main() -> None:
     init()
 
-    parser = argparse.ArgumentParser(description="Test KIE provider submission")
-    parser.add_argument("--model", required=True, help="KIE model identifier")
+    parser = argparse.ArgumentParser(description="Test PixVerse provider submission")
+    parser.add_argument("--model", required=True, help="PixVerse model identifier")
     parser.add_argument("--prompt", required=True, help="Generation prompt")
     parser.add_argument("--image", default=None, help="Optional image URL or local path")
     parser.add_argument("--video", default=None, help="Optional video URL or local path")
@@ -45,15 +45,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not os.environ.get("KIE_API_KEY"):
-        log.error("KIE_API_KEY environment variable not set")
+    if not os.environ.get("PIXVERSE_API_KEY"):
+        log.error("PIXVERSE_API_KEY environment variable not set")
         sys.exit(1)
 
     log.info(
         f'Submit: model="{args.model}" prompt="{args.prompt}" image="{args.image}" '
         f'video="{args.video}" workflow="{args.workflow}" kwargs="{args.kwargs}"'
     )
-    client = Kie()
+    client = Pixverse()
     log.info(f"Client: {client}")
     try:
         kwargs = {

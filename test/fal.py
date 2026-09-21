@@ -1,4 +1,4 @@
-"""Test script for KIE provider using submit."""
+"""Test script for Fal provider using submit."""
 
 # pylint: disable=wrong-import-position,duplicate-code,assignment-from-no-return
 
@@ -11,7 +11,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cli.kie import Kie
+from cli.fal import Fal
 from srv.logger import init, log
 
 
@@ -30,8 +30,8 @@ def _parse_kwargs(raw: str | None) -> dict[str, Any]:
 def main() -> None:
     init()
 
-    parser = argparse.ArgumentParser(description="Test KIE provider submission")
-    parser.add_argument("--model", required=True, help="KIE model identifier")
+    parser = argparse.ArgumentParser(description="Test Fal provider submission")
+    parser.add_argument("--model", required=True, help="Fal model identifier")
     parser.add_argument("--prompt", required=True, help="Generation prompt")
     parser.add_argument("--image", default=None, help="Optional image URL or local path")
     parser.add_argument("--video", default=None, help="Optional video URL or local path")
@@ -45,15 +45,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not os.environ.get("KIE_API_KEY"):
-        log.error("KIE_API_KEY environment variable not set")
+    if not os.environ.get("FAL_API_KEY"):
+        log.error("FAL_API_KEY environment variable not set")
         sys.exit(1)
 
     log.info(
         f'Submit: model="{args.model}" prompt="{args.prompt}" image="{args.image}" '
         f'video="{args.video}" workflow="{args.workflow}" kwargs="{args.kwargs}"'
     )
-    client = Kie()
+    client = Fal()
     log.info(f"Client: {client}")
     try:
         kwargs = {
@@ -69,12 +69,7 @@ def main() -> None:
             response = client.submit(**kwargs, **args.kwargs)
         log.info(f"Response: {response}")
 
-        raw = response.raw_request
-        raw = json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else raw
-        log.debug(f"Request JSON: {raw}")
-        raw = response.raw_response
-        raw = json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else raw
-        log.debug(f"Response JSON: {raw}")
+        log.debug(f"Response JSON: {json.dumps(response.as_dict(), indent=2)}")
 
         stats = client.resources.stats.records()
         log.debug(f"Stats: {json.dumps(stats, indent=2)}")
