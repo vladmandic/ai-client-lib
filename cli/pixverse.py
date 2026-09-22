@@ -15,6 +15,7 @@ from .core import (
     ClientConfig,
     ProviderHttpClient,
     Response,
+    extract_media_urls,
     validate_workflow_inputs,
 )
 
@@ -45,6 +46,10 @@ class Pixverse(ProviderHttpClient):
     ) -> Response:
         record = self.resources.stats.start("submit")
         workflow = validate_workflow_inputs(model, image, video, workflow)
+        if workflow == "text-to-image":
+            workflow = "text-to-video"
+        elif workflow == "image-to-image":
+            workflow = "image-to-video"
         if workflow not in {"text-to-video", "image-to-video"}:
             raise CapabilityError("PixVerse documents text-to-video and image-to-video workflows")
         trace_id = str(uuid4())
@@ -52,7 +57,7 @@ class Pixverse(ProviderHttpClient):
         response = self._request(workflow, "POST", body, trace_id, record.correlation_id)
         request_id = self._video_id(response)
         self.resources.stats.update(record.correlation_id, request_id=request_id, status="queued")
-        return self._poll(request_id, workflow, trace_id, record.correlation_id)
+        return self._poll(request_id, workflow, trace_id, record.correlation_id, raw_request=body)
 
     def submit_async(self, *args: Any, **kwargs: Any) -> Response:
         del args, kwargs
@@ -79,6 +84,7 @@ class Pixverse(ProviderHttpClient):
         workflow: str,
         trace_id: str,
         correlation_id: str,
+        raw_request: Any = None,
     ) -> Response:
         del workflow
         deadline = time.monotonic() + self.config.poll_timeout
@@ -88,7 +94,13 @@ class Pixverse(ProviderHttpClient):
             self.resources.stats.update(correlation_id, status=status)
             if status in {"completed", "failed"}:
                 self.resources.stats.update(correlation_id, status=status, finish=True)
-                return self._normalize(response, correlation_id, status, request_id)
+                return self._normalize(
+                    response,
+                    correlation_id,
+                    status,
+                    request_id,
+                    raw_request=raw_request,
+                )
             time.sleep(self.config.poll_interval)
         self.resources.stats.update(correlation_id, error="polling timeout")
         raise TimeoutError(f"PixVerse video {request_id} polling timed out")
@@ -144,7 +156,13 @@ class Pixverse(ProviderHttpClient):
         if video is not None:
             raise CapabilityError("PixVerse video-to-video is not documented by these endpoints")
         payload = {"model": model.rsplit("/", 1)[0], "prompt": prompt, **kwargs}
-        if workflow == "image-to-video":
+        if workflow == "text-to-video":
+            payload.setdefault("aspect_ratio", "16:9")
+            payload.setdefault("duration", 5)
+            payload.setdefault("quality", "540p")
+        elif workflow == "image-to-video":
+            payload.setdefault("duration", 5)
+            payload.setdefault("quality", "540p")
             if image is None:
                 raise CapabilityError("PixVerse image-to-video requires an image")
             if "img_id" not in payload:
@@ -166,15 +184,29 @@ class Pixverse(ProviderHttpClient):
             return "failed"
         return {1: "completed", 5: "processing", 7: "failed", 8: "failed"}.get(value, "processing")
 
-    @staticmethod
+    @classmethod
+    def _extract_media_url(cls, result: Any, response: Any) -> str | list[str] | None:
+        urls: list[str] = []
+        if result is not None:
+            urls.extend(extract_media_urls(result))
+        if not urls and response is not None:
+            urls.extend(extract_media_urls(response))
+        if not urls:
+            return None
+        return urls[0] if len(urls) == 1 else urls
+
+    @classmethod
     def _normalize(
+        cls,
         response: Any,
         correlation_id: str,
         status: str,
         request_id: str,
+        raw_request: Any = None,
     ) -> Response:
         error = response.get("ErrMsg") if isinstance(response, dict) else None
         result = response.get("Resp") if status == "completed" and isinstance(response, dict) else None
+        media_url = cls._extract_media_url(result, response) if status == "completed" else None
         return Response(
             request_id=request_id,
             status=status,
@@ -182,4 +214,6 @@ class Pixverse(ProviderHttpClient):
             error=str(error) if error and status == "failed" else None,
             raw_response=response,
             correlation_id=correlation_id,
+            raw_request=raw_request,
+            media_url=media_url,
         )

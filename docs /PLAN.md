@@ -19,6 +19,7 @@
 - Define configurable polling with a 10-minute timeout and 2-second interval by default.
 - Define configurable retry behavior for transient busy, rate-limit, and server errors, with maximum attempts, initial delay, maximum delay, and jitter controls.
 - Define normalized response fields: `request_id`, `status`, `result`, and `error`, while preserving the raw provider response.
+- Provide lazy `.bytes` download (`BytesList`) and `.images` PIL conversion (`ImagesList`) properties on the `Response` object for direct media access.
 - Make `cancel` return the same normalized response shape as the other request methods.
 - Normalize provider statuses to `queued`, `processing`, `completed`, `failed`, or `cancelled` where possible.
 - Keep API keys out of logs, exceptions, normalized responses, and validation output.
@@ -54,10 +55,10 @@
 
 Create one class per provider. Each class must map the shared contract to that provider's documented API and support all workflows the provider actually exposes:
 
-- `cli/fal.py` with `Fal`: direct or queue submission, webhook submission, status polling, and documented media inputs.
-- `cli/kie.py` with `Kie`: asynchronous task creation, callback forwarding, task status polling, and result normalization.
-- `cli/pixverse.py` with `Pixverse`: documented video workflows, status polling, and explicit errors for unsupported image-only or video-to-video operations.
-- `cli/byteplus.py` with `BytePlus`: support the verified image-generation endpoint and Seedance video task creation, polling, and cancellation; mark webhook submission and generic file upload explicitly unsupported.
+- `cli/fal.py` with `Fal`: direct or queue submission, webhook submission (`?fal_webhook=`), status polling, cancellation, and data-URI conversion for local media up to configured limits.
+- `cli/kie.py` with `Kie`: asynchronous task creation, callback forwarding (`callBackUrl`), task status polling, automatic multipart upload of local media to `https://kieai.redpandaai.co/api/file-stream-upload`, and result normalization.
+- `cli/pixverse.py` with `Pixverse`: documented video workflows (`text-to-video`, `image-to-video`), status polling with trace IDs, and explicit capability errors for unsupported operations.
+- `cli/byteplus.py` with `BytePlus`: synchronous image generation (`POST /images/generations`), Seedance video task creation with polling, video webhook submission (`callback_url`), cancellation (`DELETE /contents/generations/tasks/{id}`), and ModelArk Files API methods (`upload_file`, `upload_url`, `get_file`, `delete_file`).
 
 Infer the workflow from model-name tokens such as `text-to-image`, `image-to-image`, `edit`, `text-to-video`, `image-to-video`, and `video-to-video`; do not hard-code exact model identifiers. Provider-specific payload fields remain provider concerns, and shared `kwargs` must be forwarded unchanged where the provider accepts them.
 Maintain a capability matrix covering generation modes, local uploads, webhooks, polling, cancellation, and cleanup for each provider.

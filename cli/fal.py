@@ -13,6 +13,7 @@ from .core import (
     ClientConfig,
     ProviderHttpClient,
     Response,
+    extract_media_urls,
     validate_workflow_inputs,
 )
 
@@ -45,7 +46,7 @@ class Fal(ProviderHttpClient):
         validate_workflow_inputs(model, image, video, workflow)
         image = self.prepare_media(image)
         video = self.prepare_media(video)
-        body = self._payload(prompt, image, video, kwargs)
+        body = self._payload(model, prompt, image, video, kwargs)
         response = self._queue_submit(model, body, record.correlation_id)
         request_id = self._request_id(response)
         self.resources.stats.update(
@@ -61,6 +62,7 @@ class Fal(ProviderHttpClient):
             record.correlation_id,
             status_url=status_url,
             response_url=response_url,
+            raw_request=body,
         )
 
     def submit_async(
@@ -77,7 +79,7 @@ class Fal(ProviderHttpClient):
         validate_workflow_inputs(model, image, video, workflow)
         image = self.prepare_media(image)
         video = self.prepare_media(video)
-        body = self._payload(prompt, image, video, kwargs)
+        body = self._payload(model, prompt, image, video, kwargs)
         response = self._queue_submit(model, body, record.correlation_id, webhook)
         request_id = self._request_id(response)
         self.resources.stats.update(
@@ -85,7 +87,7 @@ class Fal(ProviderHttpClient):
             request_id=request_id,
             status="queued",
         )
-        return self._normalize(response, record.correlation_id, "queued", request_id)
+        return self._normalize(response, record.correlation_id, "queued", request_id, raw_request=body)
 
     def status(self, model: str, request_id: str) -> Response:
         record = self.resources.stats.find_by_request_id(request_id)
@@ -137,6 +139,7 @@ class Fal(ProviderHttpClient):
         correlation_id: str,
         status_url: str | None = None,
         response_url: str | None = None,
+        raw_request: Any = None,
     ) -> Response:
         if status_url is None:
             status_url = f"{self.base_url}/{model}/requests/{request_id}/status"
@@ -160,10 +163,22 @@ class Fal(ProviderHttpClient):
                     "result",
                 )
                 self.resources.stats.update(correlation_id, status="completed", finish=True)
-                return self._normalize(result, correlation_id, "completed", request_id)
+                return self._normalize(
+                    result,
+                    correlation_id,
+                    "completed",
+                    request_id,
+                    raw_request=raw_request,
+                )
             if status in {"failed", "cancelled"}:
                 self.resources.stats.update(correlation_id, status=status, finish=True)
-                return self._normalize(response, correlation_id, status, request_id)
+                return self._normalize(
+                    response,
+                    correlation_id,
+                    status,
+                    request_id,
+                    raw_request=raw_request,
+                )
             time.sleep(self.config.poll_interval)
         self.resources.stats.update(correlation_id, error="polling timeout")
         raise TimeoutError(f"fal request {request_id} polling timed out")
@@ -203,8 +218,10 @@ class Fal(ProviderHttpClient):
         )
         return response
 
-    @staticmethod
+    @classmethod
     def _payload(
+        cls,
+        model: str,
         prompt: str | None,
         image: str | os.PathLike[str] | None,
         video: str | os.PathLike[str] | None,
@@ -214,7 +231,11 @@ class Fal(ProviderHttpClient):
         if prompt is not None:
             payload["prompt"] = prompt
         if image is not None:
-            payload["image_url"] = str(image)
+            image_str = str(image)
+            if "banana" in model.lower():
+                payload["image_urls"] = [image_str]
+            else:
+                payload["image_url"] = image_str
         if video is not None:
             payload["video_url"] = str(video)
         return payload
@@ -238,21 +259,43 @@ class Fal(ProviderHttpClient):
             "ERROR": "failed",
         }.get(value, "failed" if isinstance(response, dict) and response.get("error") else "processing")
 
-    @staticmethod
+    @classmethod
+    def _extract_media_url(cls, response: Any) -> str | list[str] | None:
+        urls: list[str] = []
+        if isinstance(response, dict):
+            if "images" in response:
+                urls.extend(extract_media_urls(response["images"]))
+            if "video" in response:
+                urls.extend(extract_media_urls(response["video"]))
+            if "image" in response:
+                urls.extend(extract_media_urls(response["image"]))
+        if not urls and response is not None:
+            urls = extract_media_urls(response)
+        if not urls:
+            return None
+        return urls[0] if len(urls) == 1 else urls
+
+    @classmethod
     def _normalize(
+        cls,
         response: Any,
         correlation_id: str,
         status: str,
         request_id: str | None,
+        raw_request: Any = None,
     ) -> Response:
         error = response.get("error") if isinstance(response, dict) else None
+        result = response if status == "completed" else None
+        media_url = cls._extract_media_url(result) if status == "completed" else None
         return Response(
             request_id=request_id,
             status=status,
-            result=response if status == "completed" else None,
+            result=result,
             error=str(error) if error else None,
             raw_response=response,
             correlation_id=correlation_id,
+            raw_request=raw_request,
+            media_url=media_url,
         )
 
 

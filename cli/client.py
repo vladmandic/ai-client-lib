@@ -55,6 +55,13 @@ class Client:
     def records(self) -> list[dict[str, Any]]:
         return self.adapter.resources.stats.records()
 
+    @property
+    def resources(self) -> Any:
+        return self.adapter.resources
+
+    def __str__(self) -> str:
+        return str(self.adapter)
+
     def close(self) -> None:
         self.adapter.close()
 

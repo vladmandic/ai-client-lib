@@ -26,7 +26,7 @@ Verified model examples:
 
 - KIE exposes multiple model APIs through its market/playground. Exact parameters and output formats are model-specific.
 - The general documentation confirms asynchronous image/video generation tasks, but the common guide does not establish that every requested workflow is available for every model.
-- Local paths are uploaded through `POST https://kieai.redpandaai.co/api/file-stream-upload`; the returned `data.fileUrl` is passed to model generation. Uploaded files are temporary and should be downloaded or migrated before expiry.
+- Local paths are uploaded through `POST https://kieai.redpandaai.co/api/file-stream-upload`; the returned `data.downloadUrl` (or `data.fileUrl`) is passed to model generation. Uploaded files are temporary and should be downloaded or migrated before expiry.
 
 ## Verified capability examples
 
@@ -42,16 +42,17 @@ Verified model examples:
 
 ## Implementation mapping
 
-- `submit`: create the task, then poll task details until a terminal state.
-- `submit_async`: create the task with the caller's callback URL unchanged and return the task ID.
-- `status`: query task details and normalize the provider status/result.
-- `cancel`: cancellation is not established by the general or example model documentation; keep it unsupported.
-- Use the documented bearer authentication and retry 429/transient server responses with the configured backoff.
+- `submit`: automatically uploads local media if needed, posts the creation payload to `POST /api/v1/jobs/createTask`, and polls `GET /api/v1/jobs/recordInfo?taskId=<task_id>` until a terminal state (`success` -> `completed`, `fail` -> `failed`).
+- `submit_async`: creates the task with `callBackUrl` set to the caller's webhook URL and returns the queued response with `taskId` immediately.
+- `status`: queries `GET /api/v1/jobs/recordInfo?taskId=<task_id>` and normalizes the task status and `resultJson` payload.
+- `cancel`: raises `CapabilityError("KIE cancellation is not documented")`.
+- Media upload: local image/video files are uploaded automatically via multipart form post to `POST https://kieai.redpandaai.co/api/file-stream-upload` (`uploadPath="media"`), extracting `downloadUrl` or `fileUrl`.
+- Media extraction: automatically extracts media URLs from `resultUrls`, `fileUrl`, `downloadUrl`, or `response`, enabling lazy `.bytes` download and `.images` PIL conversion on the `Response` object.
+- Retries: retries HTTP 429 and 5xx responses using exponential backoff with jitter.
 
 ## Known gaps
 
 - The two pages are schema examples, not an allowlist. Any KIE model whose name contains a supported workflow token is validated generically; provider-specific fields remain in `kwargs`.
 - Models without a recognizable workflow token default to text-to-image when no media is supplied, image-to-image when an image is supplied, and video-to-video when a video is supplied.
-- KIE image schemas vary by model family: Banana models use `image_input`, MiniMax H3 uses frame URL fields, and other image-to-video models use `image_urls`. Provider-specific kwargs remain the escape hatch for additional fields.
-- Local files are supported through the KIE File Upload API; remote URLs continue to pass through unchanged.
-- Avoid retrying task creation without an idempotency mechanism because a retry may create a duplicate task.
+- Model family conventions are handled automatically (Seedream defaults `quality="basic"` and `aspect_ratio="1:1"`, Banana/z-image models use `image_input`, MiniMax models use `first_frame_url`, other image models use `image_urls`). Additional parameters are passed via `kwargs`.
+- Cancellation is not documented by KIE and raises `CapabilityError`.

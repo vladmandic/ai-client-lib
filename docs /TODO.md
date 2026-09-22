@@ -1,9 +1,9 @@
 # Open Items
 
-## Release blockers
+## Status and validation
 
-- Run live validation against real endpoints for Fal, KIE, PixVerse, and BytePlus using secure credentials.
-- Validate every documented workflow with inexpensive models and short videos where possible.
+- Live smoke tests executed and verified for Fal (`t2i`, `i2i`), KIE (`t2i`, `i2i`), and BytePlus (`t2i`, `i2i`) under `test/*.md`.
+- PixVerse live validation requires account credits and testing with short video generations.
 - Confirm provider response schemas, status transitions, retry behavior, rate limits, and result URL expiration in live calls.
 - Reconcile any live API differences with the provider notes and capability matrix.
 
@@ -11,17 +11,16 @@
 
 ### Fal
 
-- Implement the raw Fal CDN upload strategy for `ClientConfig(media_strategy="upload")`.
+- Implement raw Fal CDN upload strategy if needed for `ClientConfig(media_strategy="upload")` (currently uses data URIs up to configured size limit).
 - Add optional cleanup for provider-uploaded Fal assets after terminal job states.
-- Verify data-URI acceptance per selected model, especially for video inputs and large files.
+- Verify data-URI acceptance across video models and very large files.
 - Verify idempotency behavior for task creation retries.
 
 ### KIE
 
-- Add cancellation if KIE documents a cancellation endpoint.
+- Add cancellation if KIE documents a cancellation endpoint (currently unsupported).
 - Confirm KIE upload expiration/cleanup behavior in live use and document any provider-specific file limits.
-- Add model-specific schema validation for the supported model families while preserving passthrough `kwargs`.
-- Confirm media field conventions for additional model families beyond the documented examples.
+- Add model-specific schema validation for additional model families while preserving passthrough `kwargs`.
 - Prevent duplicate task creation on retries when an idempotency mechanism is unavailable.
 
 ### PixVerse
@@ -33,7 +32,6 @@
 
 ### BytePlus
 
-- Implement webhook submission only if a selected ModelArk API documents callbacks.
 - Verify whether Seedance generation accepts Files API IDs directly; currently File IDs are exposed through explicit methods but not automatically inserted into generation content.
 - Add automatic File API asset cleanup after terminal jobs once generation payload integration is verified.
 - Add model-specific validation for Seedream image generation and Seedance video task constraints.

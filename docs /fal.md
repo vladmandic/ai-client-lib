@@ -27,19 +27,20 @@ Source: https://fal.ai/docs/documentation/model-apis/overview
 - Model support is endpoint-specific. The model reference includes text-to-image, image-to-image/editing, text-to-video, image-to-video, and video-to-video endpoints across different models.
 - Inputs generally use model-specific fields and fal-hosted/public media URLs.
 - fal provides CDN/file upload facilities for using local files as model inputs. The exact upload endpoint and response shape should be confirmed for the selected implementation path.
-- The adapter currently converts local files to data URIs by default up to its configured limit. Existing URLs and data URIs pass through unchanged; raw CDN upload remains a separate strategy pending endpoint-level verification.
+- The adapter converts local files to data URIs by default up to `data_uri_max_bytes` (10 MB default in `ClientConfig`). Existing HTTP/HTTPS URLs and data URIs pass through unchanged.
+- Banana model families (e.g. `google/nano-banana-lite/edit`) automatically format reference images in `image_urls` as a list, while other image models use `image_url`. Video inputs use `video_url`.
 
 ## Implementation mapping
 
-- `submit`: use synchronous/direct inference where appropriate, or queue submission followed by status polling.
-- `submit_async`: submit to the queue with the caller's webhook URL unchanged.
-- `status`: query the queue status and fetch the completed result using the provider request ID.
-- `cancel`: issue the documented `PUT` cancellation request. `202` means cancellation requested; `400` may mean already completed; `404` means not found.
-- Retry transient HTTP failures and documented queue/busy failures. Preserve the selected API key and idempotency behavior across retries where supported.
+- `submit`: queue submission to `POST https://queue.fal.run/{model}` followed by polling the status URL (`/status`) and fetching the completed result (`/requests/{request_id}`).
+- `submit_async`: submit to `POST https://queue.fal.run/{model}?fal_webhook=<url>` and return the queued response with `request_id` immediately.
+- `status`: query status via `GET /{model}/requests/{request_id}/status`, and if completed, fetch result from `GET /{model}/requests/{request_id}`.
+- `cancel`: issue the documented `PUT /{model}/requests/{request_id}/cancel` request.
+- Media extraction: automatically extracts media URLs from `images`, `video`, and `image` result fields, enabling lazy `.bytes` download and `.images` PIL image conversion on the `Response` object.
+- Retry transient HTTP failures (408, 429, 5xx) and documented queue/busy failures using exponential backoff with jitter.
 
 ## Known gaps
 
-- Request and response fields vary by model; do not invent one universal provider payload.
-- Exact generic cancellation endpoint and generic upload/delete lifecycle need endpoint-level verification.
-- Capability checks must be model-aware even though the adapter is one class.
-- Provider concurrency limits are documented separately and should be configured rather than assumed unlimited.
+- Request and response fields vary by model; provider-specific parameters are passed through `kwargs`.
+- Raw CDN upload is not implemented; local files are encoded as data URIs.
+- Capability checks are model-aware based on inferred or explicitly passed `workflow`.

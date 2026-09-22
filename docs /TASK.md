@@ -23,23 +23,21 @@ HTTP requests must support configurable retries for transient busy or server err
 
 Each provider must be implemented as a separate file and class, for example: `cli/fal.py:Fal`.
 
-each provider should be implemented as a separate file and class, for example: `cli/fal.py:Fal`
-
 Standard parameters for submit requests:
 - provider api key: a string or a non-empty list of strings. When a list is provided, select one key at random for each logical request to distribute load across keys.
 - model name
 - optional workflow (`text-to-image`/`t2i`, `image-to-image`/`i2i`, `edit`, `text-to-video`/`t2v`, `image-to-video`/`i2v`, or `video-to-video`/`v2v`) to override model-name inference
-- async flag (`true`/`false`)
+- async flag (`true`/`false` via `submit_async`)
 - image or video prompt
-- optional image for image-to-image or image-to-video
+- optional image for image-to-image, image-to-video, or edit
 - optional video for video-to-video
 - `kwargs`: a dictionary passed to the provider API unchanged, for example: `{"width": 512, "height": 512}`
 
-Image and video inputs may be provider URLs or local file paths. Local files must be uploaded through a documented provider upload endpoint where available. If a provider does not support the required upload or workflow, the client must raise a clear capability error and document the limitation.
+Image and video inputs may be provider URLs or local file paths. Local files are converted to data URIs (Fal, BytePlus images) or uploaded through a documented provider upload endpoint (KIE). If a provider does not support the required upload or workflow, the client raises a clear capability error and documents the limitation.
 
 When local media is uploaded, the client may optionally delete the temporary provider-uploaded asset after the generation job completes. It must never delete or modify the caller's original local file.
 
-Provider methods must return normalized common fields together with the raw provider response, preserving provider-specific data.
+Provider methods return normalized common fields together with the raw provider response, preserving provider-specific data, and exposing lazy `.bytes` download (`BytesList`) and `.images` PIL image conversion (`ImagesList`) properties.
 
 The `cancel` method must return the same normalized response shape as other request methods. If cancellation is unsupported, it must raise a clear capability error.
 
@@ -114,7 +112,7 @@ Do not create separate classes for text-to-image, image-to-image, text-to-video,
 - Live validation must be performed carefully because provider requests may consume credits, be rate-limited, or create real media.
 - Any provider or workflow that cannot be completed because of documentation, API, or capability limits must be marked clearly in the documentation and final implementation report.
 
-BytePlus support is based on the verified image-generation and Seedance video task tutorials: image submission, video submission with polling, status, and documented queued-task cancellation are supported; webhook submission and generic file upload remain unsupported.
+BytePlus support is based on the verified ModelArk image-generation and Seedance video task documentation: synchronous image submission, Seedance video submission with polling, video webhook submission via `callback_url`, status, video task cancellation, and ModelArk Files API methods (`upload_file`, `upload_url`, `get_file`, `delete_file`) are supported; image webhook submission is unsupported.
 
 ask any clarifying questions before starting the implementation.
 if any provider cannot be completed due to lack of documentation or api access, mark it as such.

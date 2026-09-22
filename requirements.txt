@@ -4,6 +4,7 @@ requests
 uvicorn
 urllib3
 PySocks
+pillow
 
 # utils
 uv

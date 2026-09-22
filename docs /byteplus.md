@@ -6,6 +6,7 @@ Source: https://ai.byteplus.com/ark/region:ap-southeast-1/docs/ModelArk/1099455
 
 Additional verified references:
 
+- [Video generation tutorial](https://docs.byteplus.com/en/docs/ModelArk/2298881)
 - [Image generation tutorial](https://docs.byteplus.com/en/docs/ModelArk/1824121)
 - [Dreamina Seedance 2.5 tutorial](https://docs.byteplus.com/en/docs/ModelArk/2607688)
 - [Image generation API](https://docs.byteplus.com/en/docs/ModelArk/1541523)
@@ -40,17 +41,18 @@ Additional verified references:
 
 ## Implementation mapping
 
-- `submit`: image workflows call the synchronous image endpoint; video workflows create a task and poll until completion.
-- `submit_async`: webhook callbacks are not documented by these references, so the adapter reports unsupported.
-- `status`: query the documented video task endpoint and normalize `queued`, `running`, `succeeded`, `failed`, `cancelled`, and `expired`.
-- `cancel`: delete/cancel queued video tasks through the documented DELETE endpoint. Running tasks cannot be cancelled; completed/failed records may be deleted.
-- `upload_file`, `upload_url`, `get_file`, and `delete_file`: expose the verified Files API lifecycle. Uploaded files are temporary and normally retained for 7 days.
+- `submit`: image workflows (`text-to-image`, `image-to-image`, `edit`) call the synchronous image endpoint (`POST /images/generations`); video workflows (`text-to-video`, `image-to-video`, `video-to-video`) create a generation task (`POST /contents/generations/tasks`) and poll `GET /contents/generations/tasks/{id}` until completion.
+- `submit_async`: video workflows create a task with `callback_url` set to the caller's webhook URL and return the queued response immediately; image workflows raise `CapabilityError` because image generation is synchronous.
+- `status`: query `GET /contents/generations/tasks/{id}` and normalize `queued`, `running` -> `processing`, `succeeded` -> `completed`, `failed`/`expired` -> `failed`, and `cancelled`.
+- `cancel`: cancel/delete video tasks through `DELETE /contents/generations/tasks/{id}`.
+- Files API methods: `upload_file(path, ...)`, `upload_url(url, ...)`, `get_file(file_id)`, and `delete_file(file_id)` expose the ModelArk Files API lifecycle.
+- Media extraction: automatically extracts media URLs from `content` or `data` response fields, enabling lazy `.bytes` download and `.images` PIL conversion on the `Response` object.
+- Base URL: supports overriding the default API base URL via the `base_url` constructor parameter.
 
 ## Known gaps
 
-- The adapter supports the documented image endpoint and Seedance-style video task lifecycle; model-specific fields remain in `kwargs`.
-- Webhook submission remains unsupported.
-- File IDs are not automatically inserted into Seedance generation content because the generation reference documents URL assets while the Files API examples document file IDs for Responses/Chat. Use the explicit Files API methods until that generation payload contract is verified.
-- Seedance 2.5 has model-specific constraints for reference assets, duration, ratio, output format, and task type; callers must provide those through `kwargs`.
-- Image URLs/base64 are documented; video inputs require public URLs or asset IDs. Local video paths are not automatically uploaded.
-- Do not expose confidential or personal data in live validation; BytePlus explicitly warns that prompts and responses are processed under its privacy terms.
+- Webhook submission is supported for video generation tasks via `callback_url`; image generation is synchronous and does not accept webhooks.
+- Image workflows accept public URLs and local images (converted to data URIs); video workflows require public HTTP/HTTPS URLs.
+- File IDs from the Files API are not automatically substituted into generation payloads; use the explicit Files API methods when needed.
+- Seedance 2.5 has model-specific constraints for reference assets, duration, ratio, output format, and task type; callers pass these through `kwargs`.
+- BytePlus ModelArk content safety checks can be strict and may reject prompts or generated outputs.

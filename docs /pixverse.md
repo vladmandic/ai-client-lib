@@ -33,14 +33,15 @@ Verified model workflow pages:
 
 ## Implementation mapping
 
-- `submit`: infer `text-to-video` or `image-to-video` from the model name, create the corresponding task, and poll its result endpoint.
-- `submit_async`: callback/webhook submission is not documented on these pages; report unsupported rather than simulating it.
-- `status`: query the documented video-generation status endpoint and normalize the task state/result.
-- `cancel`: not established by the overview; keep unsupported until verified in the API reference.
+- `submit`: validates workflow (`text-to-video` or `image-to-video`), dispatches to `POST /video/text/generate` or `POST /video/img/generate` using generated `Ai-trace-id`, and polls `GET /video/result/{video_id}` until completed or failed.
+- `submit_async`: raises `CapabilityError("PixVerse callback/webhook submission is not documented")`.
+- `status`: queries `GET /video/result/{video_id}` with `Ai-trace-id` and maps status codes (1 -> `completed`, 5 -> `processing`, 7/8 -> `failed`).
+- `cancel`: raises `CapabilityError("PixVerse cancellation is not documented")`.
+- Media extraction: extracts media URLs from `Resp.video_url` or related fields, enabling lazy `.bytes` download on the `Response` object.
 
 ## Known gaps
 
-- The adapter infers workflow from model-name tokens; the API model value is the portion before the final workflow token, for example `v4.5/image-to-video` sends `v4.5`.
-- Status values are `1` success, `5` in progress, `7` moderation failure, and `8` generation failure.
-- Video-to-video, callbacks, and cancellation remain unsupported by these pages.
-- API plans, credits, rate limits, and output retention must be checked before live validation.
+- Workflow inference extracts the model name prefix before the workflow token (e.g. `v4.5/image-to-video` sends `model="v4.5"`).
+- Image-to-video requires an uploaded image ID (`img_id`) passed in `kwargs`.
+- Text-to-image, image-to-image, video-to-video, async webhook callbacks, and task cancellation are not supported by the documented API and raise `CapabilityError`.
+- Status codes: `1` success, `5` in progress, `7` moderation failure, and `8` generation failure.

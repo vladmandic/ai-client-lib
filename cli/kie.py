@@ -20,6 +20,7 @@ from .core import (
     HttpProviderError,
     ProviderHttpClient,
     Response,
+    extract_media_urls,
     validate_workflow_inputs,
 )
 
@@ -53,7 +54,7 @@ class Kie(ProviderHttpClient):
         api_key = self._key_for_request()
         image, video = self._prepare_media(image, video, record.correlation_id, api_key)
         body = self._body(model, prompt, image, video, workflow, kwargs)
-        response = self._request("POST", "/api/v1/jobs/createTask", record.correlation_id, body, api_key)
+        response = self._request("POST", "/api/v1/jobs/createTask", record.correlation_id, body, api_key, operation="submit")
         task_id = self._task_id(response)
         if task_id is None:
             error_msg = self._extract_error(response)
@@ -88,7 +89,7 @@ class Kie(ProviderHttpClient):
         image, video = self._prepare_media(image, video, record.correlation_id, api_key)
         body = self._body(model, prompt, image, video, workflow, kwargs)
         body["callBackUrl"] = webhook
-        response = self._request("POST", "/api/v1/jobs/createTask", record.correlation_id, body, api_key)
+        response = self._request("POST", "/api/v1/jobs/createTask", record.correlation_id, body, api_key, operation="submit_async")
         task_id = self._task_id(response)
         if task_id is None:
             error_msg = self._extract_error(response)
@@ -124,6 +125,7 @@ class Kie(ProviderHttpClient):
             f"/api/v1/jobs/recordInfo?{urlencode({'taskId': request_id})}",
             record.correlation_id,
             api_key=self._key_for_request(),
+            operation="status",
         )
         status = self._status(response)
         self.resources.stats.update(
@@ -151,6 +153,7 @@ class Kie(ProviderHttpClient):
                 f"/api/v1/jobs/recordInfo?{urlencode({'taskId': task_id})}",
                 correlation_id,
                 api_key,
+                operation="status",
             )
             status = self._status(response)
             self.resources.stats.update(correlation_id, status=status)
@@ -174,6 +177,7 @@ class Kie(ProviderHttpClient):
         correlation_id: str,
         body: dict[str, Any] | None = None,
         api_key: str | None = None,
+        operation: str = "submit",
     ) -> Any:
         headers = {
             "Authorization": f"Bearer {api_key or self._key_for_request()}",
@@ -186,7 +190,7 @@ class Kie(ProviderHttpClient):
             body=body,
             headers=headers,
             correlation_id=correlation_id,
-            operation=method,
+            operation=operation,
         )
         return response
 
@@ -237,14 +241,21 @@ class Kie(ProviderHttpClient):
                     "X-Correlation-ID": correlation_id,
                 },
             )
-            self.resources.stats.record_attempt(correlation_id, response.status)
             if response.status >= 400:
                 raise HttpProviderError(response.status, "KIE file upload failed")
             result = self._decode(response)
             try:
-                return str(result["data"]["fileUrl"])
+                data = result.get("data") if isinstance(result, dict) else None
+                file_url = (
+                    data.get("downloadUrl") or data.get("fileUrl") or data.get("url")
+                    if isinstance(data, dict)
+                    else None
+                )
+                if not file_url:
+                    raise KeyError("downloadUrl/fileUrl")
+                return str(file_url)
             except (KeyError, TypeError) as error:
-                raise RuntimeError("KIE upload response did not include data.fileUrl") from error
+                raise RuntimeError("KIE upload response did not include data.downloadUrl or data.fileUrl") from error
         finally:
             self.resources.stats.end_http()
             self.resources.release()
@@ -261,6 +272,9 @@ class Kie(ProviderHttpClient):
     ) -> dict[str, Any]:
         workflow = validate_workflow_inputs(model, image, video, workflow)
         input_data = {"prompt": prompt, **kwargs}
+        if "seedream" in model.lower():
+            input_data.setdefault("quality", "basic")
+            input_data.setdefault("aspect_ratio", "1:1")
         if workflow in {"image-to-image", "image-to-video", "edit"}:
             image_url = str(image)
             if not image_url.startswith(("http://", "https://", "oss://")):
@@ -313,8 +327,33 @@ class Kie(ProviderHttpClient):
             "fail": "failed",
         }.get(state, "processing")
 
-    @staticmethod
+    @classmethod
+    def _extract_media_url(cls, result: Any, data: Any) -> str | list[str] | None:
+        urls: list[str] = []
+        if isinstance(result, dict):
+            urls.extend(extract_media_urls(result.get("resultUrls")))
+            urls.extend(extract_media_urls(result.get("resultUrl")))
+            urls.extend(extract_media_urls(result.get("fileUrl")))
+            urls.extend(extract_media_urls(result.get("downloadUrl")))
+        if not urls and isinstance(data, dict):
+            resp = data.get("response")
+            if isinstance(resp, dict):
+                urls.extend(extract_media_urls(resp.get("resultUrls")))
+                urls.extend(extract_media_urls(resp.get("resultUrl")))
+                urls.extend(extract_media_urls(resp.get("fileUrl")))
+                urls.extend(extract_media_urls(resp.get("downloadUrl")))
+            urls.extend(extract_media_urls(data.get("resultUrls")))
+            urls.extend(extract_media_urls(data.get("downloadUrl")))
+            urls.extend(extract_media_urls(data.get("fileUrl")))
+        if not urls and result is not None:
+            urls = extract_media_urls(result)
+        if not urls:
+            return None
+        return urls[0] if len(urls) == 1 else urls
+
+    @classmethod
     def _normalize(
+        cls,
         response: Any,
         correlation_id: str,
         status: str,
@@ -334,6 +373,7 @@ class Kie(ProviderHttpClient):
                 result = result_json
         elif status == "failed":
             error = data.get("failMsg") or error
+        media_url = cls._extract_media_url(result, data) if status == "completed" else None
         return Response(
             request_id=request_id if request_id else None,
             status=status,
@@ -342,4 +382,5 @@ class Kie(ProviderHttpClient):
             raw_response=response,
             correlation_id=correlation_id,
             raw_request=raw_request,
+            media_url=media_url,
         )

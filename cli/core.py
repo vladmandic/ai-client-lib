@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import mimetypes
 import os
@@ -19,6 +20,7 @@ from typing import Any, Self
 from uuid import uuid4
 
 import urllib3
+from PIL import Image
 
 from srv.logger import log
 
@@ -106,9 +108,10 @@ def validate_workflow_inputs(
 class HttpProviderError(ProviderError):
     """Raised for a non-successful provider HTTP response."""
 
-    def __init__(self, status_code: int, message: str):
-        super().__init__(message)
+    def __init__(self, status_code: int, message: str, raw_response: Any = None):
+        super().__init__(f"{status_code}: {message}" if message else str(status_code))
         self.status_code = status_code
+        self.raw_response = raw_response
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,23 +134,162 @@ class ClientConfig:
         return f'ClientConfig(poll_timeout={self.poll_timeout} poll_interval={self.poll_interval} max_attempts={self.max_attempts} retry_initial_delay={self.retry_initial_delay} retry_max_delay={self.retry_max_delay} retry_jitter={self.retry_jitter} cleanup_uploaded_media={self.cleanup_uploaded_media} concurrency_limit={self.concurrency_limit} requests_per_second={self.requests_per_second} media_strategy="{self.media_strategy}" data_uri_max_bytes={self.data_uri_max_bytes})'
 
 
+class BytesList(list[bytes]):
+    """List of bytes for media items with callable getter support."""
+
+    def __call__(self) -> BytesList:
+        return self
+
+
+class ImagesList(list[Any]):
+    """List of PIL Images with callable getter support."""
+
+    def __call__(self) -> ImagesList:
+        return self
+
+
+def extract_media_urls(value: Any) -> list[str]:
+    """Recursively extract media URLs from a provider result or response."""
+    urls: list[str] = []
+
+    def _walk(val: Any) -> None:
+        if isinstance(val, str):
+            if val.startswith(("http://", "https://", "oss://", "data:")) and val not in urls:
+                urls.append(val)
+        elif isinstance(val, dict):
+            for key in (
+                "resultUrls",
+                "images",
+                "data",
+                "content",
+                "Resp",
+                "response",
+                "url",
+                "video_url",
+                "image_url",
+                "fileUrl",
+                "resultUrl",
+            ):
+                if key in val:
+                    _walk(val[key])
+            for k, v in val.items():
+                if k in {
+                    "param",
+                    "paramJson",
+                    "raw_request",
+                    "callBackUrl",
+                    "callback_url",
+                    "webhook",
+                    "webhook_url",
+                    "input",
+                }:
+                    continue
+                if k not in (
+                    "resultUrls",
+                    "images",
+                    "data",
+                    "content",
+                    "Resp",
+                    "response",
+                    "url",
+                    "video_url",
+                    "image_url",
+                    "fileUrl",
+                    "resultUrl",
+                ):
+                    _walk(v)
+        elif isinstance(val, (list, tuple)):
+            for item in val:
+                _walk(item)
+
+    _walk(value)
+    return urls
+
+
+def _fetch_media_bytes(pool: urllib3.PoolManager, url: str) -> bytes | None:
+    if url.startswith("data:"):
+        if "," in url:
+            _, encoded = url.split(",", 1)
+            return base64.b64decode(encoded)
+        return None
+    if url.startswith(("http://", "https://")):
+        resp = pool.request("GET", url, preload_content=True)
+        if resp.status >= 400:
+            raise HttpProviderError(resp.status, f"Failed to fetch media from {url}")
+        return resp.data
+    return None
+
+
 @dataclass(slots=True)
 class Response:
     """Provider-independent response fields plus the raw response."""
 
     request_id: str | None
     correlation_id: str | None = None
-    status: str = None
+    status: str | None = None
     result: Any = None
     error: str | None = None
     raw_request: Any = None
     raw_response: Any = None
+    media_url: str | list[str] | None = None
+    _cached_bytes: BytesList | None = field(default=None, init=False, repr=False)
+    _cached_images: ImagesList | None = field(default=None, init=False, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        values = asdict(self)
+        values.pop("_cached_bytes", None)
+        values.pop("_cached_images", None)
+        return values
 
     def __str__(self) -> str:
-        return f'Response(id={self.request_id} status={self.status} error={self.error} result={self.result})'
+        return f'Response(id="{self.request_id}" status="{self.status}" error="{self.error}" media="{self.media_url}" result="{self.result}")'
+
+    @property
+    def media_urls(self) -> list[str]:
+        """Return all media URLs as a list of strings."""
+        if self.media_url is None:
+            return []
+        if isinstance(self.media_url, str):
+            return [self.media_url]
+        return list(self.media_url)
+
+    @property
+    def bytes(self) -> BytesList:
+        """Fetch media URL(s) and return content as a list of bytes per item."""
+        if self._cached_bytes is not None:
+            return self._cached_bytes
+        items: list[bytes] = []
+        urls = self.media_urls
+        if urls:
+            pool = urllib3.PoolManager()
+            try:
+                for url in urls:
+                    try:
+                        data = _fetch_media_bytes(pool, url)
+                        if data is not None:
+                            items.append(data)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass
+            finally:
+                pool.clear()
+        self._cached_bytes = BytesList(items)
+        return self._cached_bytes
+
+    @property
+    def images(self) -> ImagesList:
+        """Convert fetched media bytes to PIL Images and return as a list."""
+        if self._cached_images is not None:
+            return self._cached_images
+        image_items: list[Any] = []
+        for raw_bytes in self.bytes:
+            try:
+                img = Image.open(io.BytesIO(raw_bytes))
+                img.load()
+                image_items.append(img)
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+        self._cached_images = ImagesList(image_items)
+        return self._cached_images
 
 
 @dataclass(slots=True)
@@ -216,11 +358,13 @@ class ProviderStats:
             if finish or record.status in TERMINAL_STATUSES:
                 record.finish()
 
-    def record_attempt(self, correlation_id: str, status_code: int) -> None:
+    def record_attempt(self, correlation_id: str, status_code: int | None = None) -> None:
         with self._lock:
-            record = self._records[correlation_id]
-            record.attempts += 1
-            record.http_status = status_code
+            record = self._records.get(correlation_id)
+            if record is not None:
+                record.attempts += 1
+                if status_code is not None:
+                    record.http_status = status_code
 
     def begin_http(self) -> None:
         with self._lock:
@@ -403,7 +547,6 @@ class ProviderHttpClient:
         correlation_id: str,
         operation: str,
     ) -> tuple[int, Any]:
-        del operation
         payload = json.dumps(body).encode("utf-8") if body is not None else None
         self.resources.acquire()
         self.resources.stats.begin_http()
@@ -418,14 +561,17 @@ class ProviderHttpClient:
                         headers=headers,
                         preload_content=True,
                     )
-                    self.resources.stats.record_attempt(correlation_id, response.status)
+                    if operation in {"submit", "submit_async"}:
+                        self.resources.stats.record_attempt(correlation_id, response.status)
                     data = self._decode(response)
                     if response.status < 400:
                         return response.status, data
                     if not self._retryable(response.status, data) or attempt == self.config.max_attempts:
-                        raise HttpProviderError(response.status, self._error_message(data))
+                        raise HttpProviderError(response.status, self._error_message(data), raw_response=data)
                     self._sleep_before_retry(response, attempt)
                 except urllib3.exceptions.HTTPError as error:
+                    if operation in {"submit", "submit_async"}:
+                        self.resources.stats.record_attempt(correlation_id)
                     if attempt == self.config.max_attempts:
                         raise ProviderError("provider HTTP request failed") from error
                     self._sleep_before_retry(None, attempt)
@@ -446,7 +592,47 @@ class ProviderHttpClient:
     @staticmethod
     def _error_message(data: Any) -> str:
         if isinstance(data, dict):
-            return str(data.get("message") or data.get("msg") or data.get("error") or "provider request failed")
+            detail = data.get("detail")
+            if isinstance(detail, list):
+                messages = [d.get("msg") or str(d) for d in detail if isinstance(d, dict)]
+                if messages:
+                    return "; ".join(messages)
+            if detail is not None and not isinstance(detail, (dict, list)):
+                return str(detail)
+            code = data.get("Code") or data.get("code") or data.get("ErrCode") or data.get("err_code")
+            for key in (
+                "ErrMsg",
+                "errMsg",
+                "err_msg",
+                "error_msg",
+                "message",
+                "msg",
+                "error",
+                "errors",
+                "error_description",
+                "description",
+                "detail",
+                "details",
+            ):
+                val = data.get(key)
+                if val:
+                    if isinstance(val, (dict, list)):
+                        try:
+                            msg = json.dumps(val)
+                        except Exception:
+                            msg = str(val)
+                    else:
+                        msg = str(val)
+                    return f"[{code}] {msg}" if code is not None and str(code) not in msg else msg
+            if data:
+                try:
+                    return json.dumps(data)
+                except Exception:
+                    return str(data)
+        elif isinstance(data, str) and data.strip():
+            return data.strip()
+        elif data is not None:
+            return str(data)
         return "provider request failed"
 
     @staticmethod

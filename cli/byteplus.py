@@ -17,6 +17,7 @@ from .core import (
     ClientConfig,
     ProviderHttpClient,
     Response,
+    extract_media_urls,
     validate_workflow_inputs,
 )
 
@@ -61,6 +62,7 @@ class BytePlus(ProviderHttpClient):
                 "/images/generations",
                 record.correlation_id,
                 body,
+                operation="submit",
             )
             self.resources.stats.update(
                 record.correlation_id,
@@ -69,14 +71,55 @@ class BytePlus(ProviderHttpClient):
                 http_status=status_code,
                 finish=True,
             )
-            return self._normalize(response, record.correlation_id, "completed", record.correlation_id)
+            return self._normalize(
+                response,
+                record.correlation_id,
+                "completed",
+                record.correlation_id,
+                raw_request=body,
+            )
         if selected_workflow in {"text-to-video", "image-to-video", "video-to-video"}:
             return self._submit_video(model, prompt, image, video, selected_workflow, kwargs, record.correlation_id)
         raise CapabilityError(f"BytePlus workflow is unsupported: {selected_workflow}")
 
-    def submit_async(self, *args: Any, **kwargs: Any) -> Response:
-        del args, kwargs
-        raise CapabilityError("BytePlus tutorials do not document webhook submission")
+    def submit_async(
+        self,
+        model: str,
+        webhook: str,
+        prompt: str,
+        image: str | os.PathLike[str] | None = None,
+        video: str | os.PathLike[str] | None = None,
+        workflow: str | None = None,
+        **kwargs: Any,
+    ) -> Response:
+        record = self.resources.stats.start("submit_async")
+        selected_workflow = validate_workflow_inputs(model, image, video, workflow)
+        if selected_workflow in {"text-to-image", "image-to-image", "edit"}:
+            raise CapabilityError("BytePlus image generation does not support webhook submission")
+        if selected_workflow in {"text-to-video", "image-to-video", "video-to-video"}:
+            body = self._video_body(model, prompt, image, video, kwargs)
+            body["callback_url"] = webhook
+            _, response = self._request(
+                "POST",
+                "/contents/generations/tasks",
+                record.correlation_id,
+                body,
+                operation="submit_async",
+            )
+            request_id = self._task_id(response)
+            self.resources.stats.update(
+                record.correlation_id,
+                request_id=request_id,
+                status="queued",
+            )
+            return self._normalize(
+                response,
+                record.correlation_id,
+                "queued",
+                request_id,
+                raw_request=body,
+            )
+        raise CapabilityError(f"BytePlus workflow is unsupported: {selected_workflow}")
 
     def status(self, request_id: str) -> Response:
         record = self.resources.stats.find_by_request_id(request_id)
@@ -87,6 +130,7 @@ class BytePlus(ProviderHttpClient):
             "GET",
             f"/contents/generations/tasks/{request_id}",
             record.correlation_id,
+            operation="status",
         )
         status = self._status(response)
         self.resources.stats.update(
@@ -106,6 +150,7 @@ class BytePlus(ProviderHttpClient):
             "DELETE",
             f"/contents/generations/tasks/{request_id}",
             record.correlation_id,
+            operation="cancel",
         )
         self.resources.stats.update(record.correlation_id, status="cancelled", finish=True)
         return self._normalize(response, record.correlation_id, "cancelled", request_id)
@@ -148,7 +193,12 @@ class BytePlus(ProviderHttpClient):
     def get_file(self, file_id: str) -> dict[str, Any]:
         """Retrieve File API metadata by file ID."""
         record = self.resources.stats.start("get_file")
-        status_code, response = self._request("GET", f"/files/{file_id}", record.correlation_id)
+        status_code, response = self._request(
+            "GET",
+            f"/files/{file_id}",
+            record.correlation_id,
+            operation="get_file",
+        )
         self.resources.stats.update(
             record.correlation_id,
             status="completed",
@@ -160,7 +210,12 @@ class BytePlus(ProviderHttpClient):
     def delete_file(self, file_id: str) -> dict[str, Any]:
         """Delete a File API asset by file ID."""
         record = self.resources.stats.start("delete_file")
-        status_code, response = self._request("DELETE", f"/files/{file_id}", record.correlation_id)
+        status_code, response = self._request(
+            "DELETE",
+            f"/files/{file_id}",
+            record.correlation_id,
+            operation="delete_file",
+        )
         self.resources.stats.update(
             record.correlation_id,
             status="completed",
@@ -214,6 +269,25 @@ class BytePlus(ProviderHttpClient):
             self.resources.stats.end_http()
             self.resources.release()
 
+    def _video_body(
+        self,
+        model: str,
+        prompt: str,
+        image: str | os.PathLike[str] | None,
+        video: str | os.PathLike[str] | None,
+        kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        if image is not None:
+            image_url = self.prepare_media(image)
+            content.append({"type": "image_url", "image_url": {"url": image_url}, "role": "first_frame"})
+        if video is not None:
+            video_url = str(video)
+            if not video_url.startswith(("http://", "https://")):
+                raise CapabilityError("BytePlus video inputs require public video URLs")
+            content.append({"type": "video_url", "video_url": {"url": video_url}, "role": "reference_video"})
+        return {"model": model, "content": content, **kwargs}
+
     def _submit_video(
         self,
         model: str,
@@ -225,21 +299,13 @@ class BytePlus(ProviderHttpClient):
         correlation_id: str,
     ) -> Response:
         del workflow
-        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-        if image is not None:
-            image_url = self.prepare_media(image)
-            content.append({"type": "image_url", "image_url": {"url": image_url}, "role": "first_frame"})
-        if video is not None:
-            video_url = str(video)
-            if not video_url.startswith(("http://", "https://")):
-                raise CapabilityError("BytePlus video inputs require public video URLs")
-            content.append({"type": "video_url", "video_url": {"url": video_url}, "role": "reference_video"})
-        body = {"model": model, "content": content, **kwargs}
+        body = self._video_body(model, prompt, image, video, kwargs)
         _, response = self._request(
             "POST",
             "/contents/generations/tasks",
             correlation_id,
             body,
+            operation="submit",
         )
         request_id = self._task_id(response)
         self.resources.stats.update(correlation_id, request_id=request_id, status="queued")
@@ -261,6 +327,7 @@ class BytePlus(ProviderHttpClient):
         path: str,
         correlation_id: str,
         body: dict[str, Any] | None = None,
+        operation: str = "submit",
     ) -> tuple[int, Any]:
         headers = {
             "Authorization": f"Bearer {self._key_for_request()}",
@@ -273,7 +340,7 @@ class BytePlus(ProviderHttpClient):
             body=body,
             headers=headers,
             correlation_id=correlation_id,
-            operation=method,
+            operation=operation,
         )
 
     @staticmethod
@@ -294,17 +361,31 @@ class BytePlus(ProviderHttpClient):
             "expired": "failed",
         }.get(value, "processing")
 
-    @staticmethod
+    @classmethod
+    def _extract_media_url(cls, result: Any, response: Any) -> str | list[str] | None:
+        urls: list[str] = []
+        if result is not None:
+            urls.extend(extract_media_urls(result))
+        if not urls and response is not None:
+            urls.extend(extract_media_urls(response))
+        if not urls:
+            return None
+        return urls[0] if len(urls) == 1 else urls
+
+    @classmethod
     def _normalize(
+        cls,
         response: Any,
         correlation_id: str,
         status: str,
         request_id: str,
+        raw_request: Any = None,
     ) -> Response:
         error = response.get("error") if isinstance(response, dict) else None
         result = None
         if status == "completed" and isinstance(response, dict):
             result = response.get("content", response.get("data"))
+        media_url = cls._extract_media_url(result, response) if status == "completed" else None
         return Response(
             request_id=request_id,
             status=status,
@@ -312,4 +393,6 @@ class BytePlus(ProviderHttpClient):
             error=str(error) if error else None,
             raw_response=response,
             correlation_id=correlation_id,
+            raw_request=raw_request,
+            media_url=media_url,
         )

@@ -5,15 +5,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cli.kie import Kie
+from cli.client import PROVIDERS, Client
 from srv.logger import init, log
 from test.helpers import parse_kwargs, process_response
 
 
 def main() -> None:
     init()
-    parser = argparse.ArgumentParser(description="Test KIE provider submission")
-    parser.add_argument("--model", required=True, help="KIE model identifier")
+    parser = argparse.ArgumentParser(description="Test unified client submission")
+    parser.add_argument(
+        "--provider",
+        required=True,
+        type=str.lower,
+        choices=list(PROVIDERS.keys()),
+        help="Provider identifier",
+    )
+    parser.add_argument("--model", required=True, help="Model identifier")
     parser.add_argument("--prompt", required=True, help="Generation prompt")
     parser.add_argument("--image", default=None, help="Optional image URL or local path")
     parser.add_argument("--video", default=None, help="Optional video URL or local path")
@@ -23,11 +30,12 @@ def main() -> None:
     parser.add_argument("--kwargs", default="{}", type=parse_kwargs, help='Optional custom kwargs as a JSON object string')
     args = parser.parse_args()
 
-    if not os.environ.get("KIE_API_KEY"):
-        log.error("KIE_API_KEY environment variable not set")
+    env_var = f"{args.provider.upper()}_API_KEY"
+    if not os.environ.get(env_var):
+        log.error(f"{env_var} environment variable not set")
         sys.exit(1)
-    log.info(f'Submit: model="{args.model}" prompt="{args.prompt}" image="{args.image}" video="{args.video}" workflow="{args.workflow}" kwargs="{args.kwargs}"')
-    client = Kie()
+    log.info(f'Submit: provider="{args.provider}" model="{args.model}" prompt="{args.prompt}" image="{args.image}" video="{args.video}" workflow="{args.workflow}" kwargs="{args.kwargs}"')
+    client = Client(provider=args.provider)
     log.info(f"Client: {client}")
     try:
         kwargs = {
