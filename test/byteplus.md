@@ -4,7 +4,7 @@
 
 > python -m test.byteplus --model seedream-5-0-lite-260128 --output samples/output-byteplus.png --prompt "sylish arcane-style photo of a model on a beach" --kwargs '{ "watermark": false, "size": "2k", "aspect_ratio": "16:9" }'
 
-```json
+```log
 11:00:45-654769 INFO     Submit: model="seedream-5-0-lite-260128" prompt="sylish arcane-style photo of a dragon on a beach" image="None" video="None" workflow="None" kwargs="{'watermark': False, 'size': '2k', 'aspect_ratio': '16:9'}"
 11:00:45-656431 INFO     Client: Client(provider=byteplus config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
 11:01:13-170790 INFO     Response: Response(id="e809a75d-70d2-44a5-8bdd-9f7492fa2800" status="completed" error="None"
@@ -62,13 +62,13 @@
                              "error": null
                            }
                          ]
-```                         
+```
 
-## t2i submit
+## i2i submit synchronous
 
 > python -m test.byteplus --model seedream-5-0-lite-260128 --image samples/cartoon.jpg --output samples/output-byteplus-i2i.png --prompt "change the image style to anime" --kwargs '{ "watermark": false }'
 
-```json
+```log
 11:31:09-843286 INFO     Submit: model="seedream-5-0-lite-260128" prompt="change the image style to anime" image="samples/cartoon.jpg" video="None" workflow="None" kwargs="{'watermark': False}"
 11:31:09-844905 INFO     Client: Client(provider=byteplus config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
 11:31:40-546496 INFO     Response: Response(id="8527eddf-9ea0-45b4-a2f4-fca2445d5260" status="completed" error="None"

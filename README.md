@@ -25,5 +25,6 @@ Each folder has its own `README.md` file, consider it as the first place to look
 ## Validation
 
 - Always activate the virtual environment in `venv` before running any python code or validation commands.
-- Run `ruff check srv/* cli/*` to validate code style and linting.
-- Run `pylint srv/* cli/*` to validate code style and linting.
+- Run `ruff check srv cli test` to validate code style and linting.
+- Run `pylint srv cli test` to validate code style and linting.
+- Run `python -m compileall -q cli srv test` to verify syntax across all packages.

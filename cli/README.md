@@ -217,10 +217,10 @@ except ProviderError as err:
 
 ## Documentation Reference
 
-- [`docs/fal.md`](../docs%20/fal.md): fal.ai queue endpoints, webhooks, cancellation, and payloads.
-- [`docs/kie.md`](../docs%20/kie.md): KIE Market task creation, automatic uploads, and model schemas.
-- [`docs/pixverse.md`](../docs%20/pixverse.md): PixVerse video endpoints, trace IDs, and parameters.
-- [`docs/byteplus.md`](../docs%20/byteplus.md): BytePlus ModelArk image/video generation and Files API.
+- [`docs/fal.md`](../docs/fal.md): fal.ai queue endpoints, webhooks, cancellation, and payloads.
+- [`docs/kie.md`](../docs/kie.md): KIE Market task creation, automatic uploads, and model schemas.
+- [`docs/pixverse.md`](../docs/pixverse.md): PixVerse video endpoints, trace IDs, and parameters.
+- [`docs/byteplus.md`](../docs/byteplus.md): BytePlus ModelArk image/video generation and Files API.
 
 ## Install
 

@@ -1,4 +1,4 @@
-# test kie.ai
+# Test Unified Client
 
 ## t2i submit synchronous
 

@@ -1,10 +1,18 @@
 # Server
 
-HTTP server that can be used for testing:
-- Provides webhook endpoint: `/api/webhook`
-- Provides media endpoint: `/api/samples`
+HTTP server used for testing webhooks and serving sample media files:
+- `GET /` - Root status endpoint
+- `GET /api/ping` - Health ping endpoint
+- `GET /api/samples` - List sample media files in `samples/`
+- `GET /api/samples/{filename}` - Download/stream sample media file
+- `POST /api/webhook` - Webhook receiver endpoint for asynchronous generation callbacks
+- `GET /swagger`, `GET /docs`, `GET /redoc` - Interactive OpenAPI documentation
 
-> python -m srv.server
+## Running the Server
+
+```bash
+python -m srv.server
+```
 
 ```log
 16:50:59-061050 INFO     App(name="Echonos.AI Webhook Test Server")

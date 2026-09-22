@@ -2,8 +2,8 @@
 
 ## Status and validation
 
-- Live smoke tests executed and verified for Fal (`t2i`, `i2i`), KIE (`t2i`, `i2i`), and BytePlus (`t2i`, `i2i`) under `test/*.md`.
-- PixVerse live validation requires account credits and testing with short video generations.
+- Live smoke tests executed and verified for Fal (`t2i`, `i2i`), KIE (`t2i`, `i2i`), BytePlus (`t2i`, `i2i`), and PixVerse (`t2v`) under `test/*.md`.
+- PixVerse image-to-video (`i2v`) live validation requires testing with pre-uploaded `img_id`.
 - Confirm provider response schemas, status transitions, retry behavior, rate limits, and result URL expiration in live calls.
 - Reconcile any live API differences with the provider notes and capability matrix.
 

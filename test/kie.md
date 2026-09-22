@@ -1,10 +1,10 @@
-# test kie.ai
+# Test KIE
 
 ## t2i submit synchronous
 
 > python -m test.kie --model z-image --output samples/output-kie.png --prompt "sylish arcane-style photo of a model on a beach" --kwargs '{ "nsfw_checker": false, "aspect_ratio": "16:9" }'
 
-```json
+```log
 10:58:48-519576 INFO     Submit: model="z-image" prompt="sylish arcane-style photo of a model on a beach" image="None" video="None" workflow="None" kwargs="{'nsfw_checker': False, 'aspect_ratio': '16:9'}"
 10:58:48-521140 INFO     Client: Client(provider=kie config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
 10:58:55-618730 INFO     Response: Response(id="cdb875af69fcf29b601e352416c466e6" status="completed" error="success" media="https://tempfile.aiquickdraw.com/js/z5/54f10d3b4e84.png" result="{'resultUrls': ['https://tempfile.aiquickdraw.com/js/z5/54f10d3b4e84.png']}")
@@ -74,9 +74,9 @@
 
 ## i2i submit synchronous
 
-> (venv) vlado@wsl:~/dev/echonos/client $ python -m test.kie --model seedream/5-lite-image-to-image --image samples/natgeo.jpg --output samples/output-kie-i2i.png --prompt "remove the text in top-left and brighten her skin-tone" --kwargs '{ "nsfw_checker": false }'
+> python -m test.kie --model seedream/5-lite-image-to-image --image samples/natgeo.jpg --output samples/output-kie-i2i.png --prompt "remove the text in top-left and brighten her skin-tone" --kwargs '{ "nsfw_checker": false }'
 
-```json
+```log
 11:16:20-507413 INFO     Submit: model="seedream/5-lite-image-to-image" prompt="remove the text in top-left and brighten her skin-tone" image="samples/natgeo.jpg" video="None" workflow="None" kwargs="{'nsfw_checker': False, 'aspect_ratio': '16:9'}"
 11:16:20-509211 INFO     Client: Client(provider=kie config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
 11:17:00-319622 INFO     Response: Response(id="c1fe63b2cd2df5f6b57a2d7fca1ff29b" status="completed" error="success" media="https://tempfile.aiquickdraw.com/p/c1fe63b2cd2df5f6b57a2d7fca1ff29b_1_1790068619_1207.jpg" result="{'resultUrls': ['https://tempfile.aiquickdraw.com/p/c1fe63b2cd2df5f6b57a2d7fca1ff29b_1_1790068619_1207.jpg']}")

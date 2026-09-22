@@ -1,10 +1,10 @@
-# test fal.ai
+# Test fal.ai
 
 ## t2i submit synchronous
 
 > python -m test.fal --model fal-ai/z-image/turbo --output samples/output-fal.png --prompt "sylish arcane-style photo of a model on a beach" --kwargs '{ "enable_safety_checker ": false, "image_size": "portrait_16_9" }'
 
-```json
+```log
 10:51:10-137975 INFO     Submit: model="fal-ai/z-image/turbo" prompt="sylish arcane-style photo of a model on a beach" image="None" video="None" workflow="None" kwargs="{'enable_safety_checker ': False, 'image_size': 'portrait_16_9'}"
 10:51:10-139764 INFO     Client: Client(provider=fal config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
 10:51:13-106300 INFO     Response: Response(id="01a0c84f-d628-7121-b7f3-bf6c4c6a0521" status="completed" error="None" media="https://v3b.fal.media/files/b/0aab6cf3/0Oo-2d6DzGdPHaefOfrS3_2qww6PcO.png" result="{'images': [{'url': 'https://v3b.fal.media/files/b/0aab6cf3/0Oo-2d6DzGdPHaefOfrS3_2qww6PcO.png', 'content_type': 'image/png', 'file_name': '0Oo-2d6DzGdPHaefOfrS3_2qww6PcO.png', 'file_size': None, 'width': 576, 'height': 1024}], 'timings': {'inference': 0.7485269579919986,
@@ -86,7 +86,7 @@
 
 > python -m test.fal --model google/nano-banana-lite/edit --image samples/natgeo.jpg --output samples/output-fal-i2i.png --prompt "remove the text in top-left and brighten her skin-tone" --kwargs '{ "safety_tolerance ": 6 }'
 
-```json
+```log
 11:26:07-994192 INFO     Submit: model="google/nano-banana-lite/edit" prompt="remove the text in top-left and brighten her skin-tone" image="samples/natgeo.jpg" video="None" workflow="None" kwargs="{'safety_tolerance ': 6}"
 11:26:07-995987 INFO     Client: Client(provider=fal config=ClientConfig(poll_timeout=600.0 poll_interval=2.0 max_attempts=3 retry_initial_delay=1.0 retry_max_delay=30.0 retry_jitter=1.0 cleanup_uploaded_media=False concurrency_limit=None requests_per_second=None media_strategy="auto" data_uri_max_bytes=10485760))
 11:26:26-372505 INFO     Response: Response(id="01a0c86f-dae3-7e93-bed5-68dfdeed742a" status="completed" error="None" media="https://v3b.fal.media/files/b/0aab6dc6/J9xi5Y5x3fvOqcdmsHU46_ZdRNeACx.png" result="{'images': [{'url': 'https://v3b.fal.media/files/b/0aab6dc6/J9xi5Y5x3fvOqcdmsHU46_ZdRNeACx.png', 'content_type': 'image/png', 'file_name': 'J9xi5Y5x3fvOqcdmsHU46_ZdRNeACx.png', 'file_size': None, 'width': 1024, 'height': 1024}], 'description': ''}")
@@ -146,4 +146,5 @@
                              "latency": 18.37559207599952,
                              "error": null
                            }
+                         ]
 ```
