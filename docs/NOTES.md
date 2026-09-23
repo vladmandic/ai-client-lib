@@ -19,3 +19,9 @@ All providers accept both synchronous (blocking/waiting for result) and asynchro
 ## Content Filters
 
 BytePlus content filters are extremely strict and may block content that other providers allow.
+
+## Activation
+
+BytePlus may be messy to use as it:
+1. Has different endpoints depending on the region
+2. Each model has to be explicitly activated before it can be used via API
