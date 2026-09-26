@@ -66,10 +66,18 @@ echo "Step 1: runtime service account + secret access..."
 gcloud iam service-accounts describe "$RUNTIME_SA" --project="$PROJECT_ID" >/dev/null 2>&1 || \
     gcloud iam service-accounts create "$RUNTIME_SA_NAME" \
         --display-name="AI client gateway runtime" --project="$PROJECT_ID"
-gcloud secrets add-iam-policy-binding FAL_KEYS \
-    --member="serviceAccount:${RUNTIME_SA}" \
-    --role="roles/secretmanager.secretAccessor" \
-    --project="$PROJECT_ID" --quiet >/dev/null
+# A just-created service account takes a few seconds to become visible to IAM.
+for attempt in 1 2 3 4 5 6; do
+    if gcloud secrets add-iam-policy-binding FAL_KEYS \
+        --member="serviceAccount:${RUNTIME_SA}" \
+        --role="roles/secretmanager.secretAccessor" \
+        --project="$PROJECT_ID" --quiet >/dev/null; then
+        break
+    fi
+    [ "$attempt" = 6 ] && exit 1
+    echo "  service account not visible yet; retrying in 10s..."
+    sleep 10
+done
 
 echo "Step 2: build image..."
 gcloud builds submit "$ROOT_DIR" \
