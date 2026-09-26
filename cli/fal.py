@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import time
 from typing import Any
+from urllib.parse import quote
 
 from .core import (
     ClientConfig,
@@ -40,6 +41,8 @@ class Fal(ProviderHttpClient):
         image: str | os.PathLike[str] | None = None,
         video: str | os.PathLike[str] | None = None,
         workflow: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Response:
         record = self.resources.stats.start("submit")
@@ -47,7 +50,7 @@ class Fal(ProviderHttpClient):
         image = self.prepare_media(image)
         video = self.prepare_media(video)
         body = self._payload(model, prompt, image, video, kwargs)
-        response = self._queue_submit(model, body, record.correlation_id)
+        response = self._queue_submit(model, body, record.correlation_id, headers=headers)
         request_id = self._request_id(response)
         self.resources.stats.update(
             record.correlation_id,
@@ -73,6 +76,8 @@ class Fal(ProviderHttpClient):
         image: str | os.PathLike[str] | None = None,
         video: str | os.PathLike[str] | None = None,
         workflow: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Response:
         record = self.resources.stats.start("submit_async")
@@ -80,7 +85,7 @@ class Fal(ProviderHttpClient):
         image = self.prepare_media(image)
         video = self.prepare_media(video)
         body = self._payload(model, prompt, image, video, kwargs)
-        response = self._queue_submit(model, body, record.correlation_id, webhook)
+        response = self._queue_submit(model, body, record.correlation_id, webhook, headers=headers)
         request_id = self._request_id(response)
         self.resources.stats.update(
             record.correlation_id,
@@ -189,11 +194,12 @@ class Fal(ProviderHttpClient):
         body: dict[str, Any],
         correlation_id: str,
         webhook: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         url = f"{self.base_url}/{model}"
         if webhook is not None:
-            url = f"{url}?fal_webhook={webhook}"
-        return self._request("POST", url, correlation_id, "submit", body)
+            url = f"{url}?fal_webhook={quote(webhook, safe='')}"
+        return self._request("POST", url, correlation_id, "submit", body, headers)
 
     def _request(
         self,
@@ -202,8 +208,11 @@ class Fal(ProviderHttpClient):
         correlation_id: str,
         operation: str,
         body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> Any:
+        # Extra headers first so they can never override authentication.
         headers = {
+            **(extra_headers or {}),
             "Authorization": f"Key {self._key_for_request()}",
             "Content-Type": "application/json",
             "X-Correlation-ID": correlation_id,
