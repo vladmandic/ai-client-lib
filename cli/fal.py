@@ -5,13 +5,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
 from urllib.parse import quote
 
+import urllib3
+
 from .core import (
     ClientConfig,
+    HttpProviderError,
+    ProviderError,
     ProviderHttpClient,
     Response,
     extract_media_urls,
@@ -23,6 +28,8 @@ class Fal(ProviderHttpClient):
     """Client for fal.ai queue-backed model APIs."""
 
     base_url = "https://queue.fal.run"
+    rest_url = "https://rest.fal.ai"
+    cdn_url = "https://v3.fal.media"
 
     def __init__(
         self,
@@ -136,6 +143,49 @@ class Fal(ProviderHttpClient):
             normalized_status = "cancelled"
         self.resources.stats.update(record.correlation_id, status=normalized_status, finish=True)
         return self._normalize(response, record.correlation_id, normalized_status, request_id)
+
+    def upload(
+        self,
+        data: bytes,
+        content_type: str,
+        file_name: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> str:
+        """Upload bytes to the fal CDN (v3, single part) and return the access URL.
+
+        Mirrors fal_client's `fal_v3` repository: exchange the API key for a
+        short-lived CDN token, then POST the raw bytes. Single-part only; the
+        SDK switches to multipart above 100 MB.
+        """
+        key = self._key_for_request()
+        token = self._raw_request(
+            "POST",
+            f"{self.rest_url}/storage/auth/token?storage_type=fal-cdn-v3",
+            json.dumps({}).encode(),
+            {"Authorization": f"Key {key}", "Content-Type": "application/json", "Accept": "application/json"},
+        )
+        upload_headers = {**(headers or {}), "Content-Type": content_type}
+        if file_name:
+            upload_headers["X-Fal-File-Name"] = file_name
+        upload_headers["Authorization"] = f"{token['token_type']} {token['token']}"
+        result = self._raw_request("POST", f"{self.cdn_url}/files/upload", data, upload_headers)
+        return str(result["access_url"])
+
+    def _raw_request(self, method: str, url: str, body: bytes, headers: dict[str, str]) -> Any:
+        self.resources.acquire()
+        self.resources.stats.begin_http()
+        try:
+            response = self.resources.pool.request(method, url, body=body, headers=headers, preload_content=True)
+        except urllib3.exceptions.HTTPError as error:
+            raise ProviderError("fal upload request failed") from error
+        finally:
+            self.resources.stats.end_http()
+            self.resources.release()
+        data = self._decode(response)
+        if response.status >= 400:
+            raise HttpProviderError(response.status, self._error_message(data), raw_response=data)
+        return data
 
     def _poll(
         self,

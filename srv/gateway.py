@@ -11,6 +11,7 @@ Endpoints (JSON in, JSON out):
     POST /v1/{provider}/submit_async  queue with a webhook, return request_id
     POST /v1/{provider}/status        status, plus the result once completed
     POST /v1/{provider}/cancel
+    POST /v1/{provider}/upload        raw bytes body -> {"url": ...} (fal CDN)
 
 Request bodies carry the provider payload verbatim in `input` (workflow "raw"),
 so callers keep full control of model-specific fields such as `image_urls`.
@@ -35,7 +36,7 @@ from dataclasses import replace
 from typing import Any
 
 from anyio import to_thread
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -334,3 +335,30 @@ def cancel(provider: str, body: FollowUpBody) -> dict[str, Any]:
     pool = pool_for(provider)
     key, response = on_owning_key(pool, body.key_ref, lambda a: a.cancel(body.model, body.request_id))
     return serialize(pool.provider, body.model, key, response)
+
+
+@app.post("/v1/{provider}/upload")
+async def upload(provider: str, request: Request) -> dict[str, Any]:
+    """Re-host bytes on the provider CDN. Body is the raw file; Cloud Run caps it at 32 MB.
+
+    Optional headers: `X-File-Name`, `X-Fal-Object-Lifecycle-Preference`.
+    """
+    pool = pool_for(provider)
+    if not hasattr(PROVIDERS[pool.provider], "upload"):
+        raise GatewayError(400, f"{pool.provider} does not support upload")
+    data = await request.body()
+    if not data:
+        raise GatewayError(400, "empty upload body")
+    content_type = request.headers.get("content-type", "application/octet-stream")
+    file_name = request.headers.get("x-file-name")
+    lifecycle = request.headers.get("x-fal-object-lifecycle-preference")
+    extra = {"X-Fal-Object-Lifecycle-Preference": lifecycle} if lifecycle else None
+
+    def call():
+        return with_failover(
+            pool, lambda adapter: adapter.upload(data, content_type, file_name, headers=extra)
+        )
+
+    key, url = await to_thread.run_sync(call)
+    log.info(f"Upload(provider={provider} bytes={len(data)} type={content_type})")
+    return {"provider": pool.provider, "url": url, "key_ref": key_ref(key)}
