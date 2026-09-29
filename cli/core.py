@@ -34,6 +34,10 @@ WORKFLOW_ALIASES = {
     "v2v": "video-to-video",
 }
 
+# Caller supplies the complete provider payload (media fields included) in
+# kwargs, so model-name workflow inference and media validation are skipped.
+RAW_WORKFLOW = "raw"
+
 
 class ProviderError(RuntimeError):
     """Base error for provider client failures."""
@@ -59,6 +63,7 @@ def infer_workflow(
             "text-to-video",
             "image-to-video",
             "video-to-video",
+            RAW_WORKFLOW,
         }:
             raise CapabilityError(f"unsupported workflow: {workflow}")
         return workflow
@@ -94,6 +99,8 @@ def validate_workflow_inputs(
         video is not None,
         workflow,
     )
+    if selected_workflow == RAW_WORKFLOW:
+        return selected_workflow
     requires_image = selected_workflow in {"image-to-image", "image-to-video", "edit"}
     requires_video = selected_workflow == "video-to-video"
     if requires_image and (image is None or video is not None):
@@ -127,6 +134,10 @@ class ClientConfig:
     cleanup_uploaded_media: bool = False
     concurrency_limit: int | None = None
     requests_per_second: float | None = None
+    # Oldest-first cap on in-memory stats records; None keeps every record.
+    # Long-running services must set it, since webhook-completed jobs are
+    # never observed as terminal and would otherwise accumulate forever.
+    max_records: int | None = None
     media_strategy: str = "auto"
     data_uri_max_bytes: int = 10 * 1024 * 1024
 
@@ -323,8 +334,9 @@ class RequestRecord:
 class ProviderStats:
     """Thread-safe, process-local statistics for one provider."""
 
-    def __init__(self, provider: str):
+    def __init__(self, provider: str, max_records: int | None = None):
         self.provider = provider
+        self.max_records = max_records
         self._records: dict[str, RequestRecord] = {}
         self._lock = threading.RLock()
         self._active_http = 0
@@ -333,6 +345,9 @@ class ProviderStats:
         record = RequestRecord(correlation_id=str(uuid4()), operation=operation)
         with self._lock:
             self._records[record.correlation_id] = record
+            if self.max_records is not None:
+                while len(self._records) > self.max_records:
+                    del self._records[next(iter(self._records))]
         return record
 
     def update(
@@ -346,7 +361,9 @@ class ProviderStats:
         finish: bool = False,
     ) -> None:
         with self._lock:
-            record = self._records[correlation_id]
+            record = self._records.get(correlation_id)
+            if record is None:  # evicted by max_records
+                return
             if request_id is not None:
                 record.request_id = request_id
             if status is not None:
@@ -407,7 +424,7 @@ class ProviderResources:
     def __init__(self, provider: str, config: ClientConfig):
         self.provider = provider
         self.pool = urllib3.PoolManager()  # pylint: disable=consider-using-with
-        self.stats = ProviderStats(provider)
+        self.stats = ProviderStats(provider, config.max_records)
         self._semaphore = (
             threading.BoundedSemaphore(config.concurrency_limit)  # pylint: disable=consider-using-with
             if config.concurrency_limit is not None

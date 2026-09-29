@@ -43,3 +43,30 @@ python -m srv.server
                          dispatch=<function HTTPD.start_fastapi.<locals>.http_logger at 0x7af2b37f6b60>)], 'middleware_stack': <starlette.middleware.errors.ServerErrorMiddleware object at 0x7af2b2581d60>, 'openapi': <function HTTPD.start_swagger.<locals>.openapi at 0x7af2b37f6ac0>})
 16:50:59-557198 DEBUG    FastAPI(uptime=0.26)
 ```
+
+# Gateway (Cloud Run)
+
+`srv/gateway.py` exposes the `cli` adapters over HTTP so every Echonos service
+calls providers through one place. Deployed as the **private** Cloud Run
+service `ai-client` (callers send a Google ID token; no anonymous access).
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `GET /health` | – | key counts per provider |
+| `POST /v1/{provider}/submit` | `{model, input, headers?, timeout?}` | blocks until done; normalized response with `result` |
+| `POST /v1/{provider}/submit_async` | `{model, input, webhook, headers?}` | `{request_id, status: "queued", key_ref}` |
+| `POST /v1/{provider}/status` | `{model, request_id, key_ref?}` | status, plus `result` once completed; failed jobs return `status: "failed"` |
+| `POST /v1/{provider}/cancel` | `{model, request_id, key_ref?}` | normalized response |
+| `POST /v1/{provider}/upload` | raw bytes (`Content-Type`, optional `X-File-Name`) | `{url}` on the provider CDN (≤ 32 MB) |
+
+- `input` is the provider payload verbatim (workflow `raw`).
+- Keys: `FAL_KEYS` (comma-separated) from Secret Manager. Each request is pinned
+  to one key; submissions fail over to another key on account-level errors
+  (locked / exhausted balance / 401), quarantining the dead key for 10 minutes.
+  Follow-ups use `key_ref` when given, else try every key.
+- Provider errors keep the provider's HTTP status (`provider_status` in the body).
+
+```bash
+ENV=staging ./deploy/deploy_gateway.sh   # echonos-staging
+ENV=prod    ./deploy/deploy_gateway.sh   # echonos-fa038; branch main or FORCE_PROD=1
+```

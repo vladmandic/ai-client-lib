@@ -1,0 +1,7 @@
+# Runtime dependencies for the srv.gateway Cloud Run image only.
+# (requirements.txt also carries dev tooling: ruff, pylint, uv.)
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+urllib3>=2.2,<3
+pillow>=10,<12
+rich>=13,<15

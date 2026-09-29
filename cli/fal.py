@@ -5,12 +5,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
+from urllib.parse import quote
+
+import urllib3
 
 from .core import (
     ClientConfig,
+    HttpProviderError,
+    ProviderError,
     ProviderHttpClient,
     Response,
     extract_media_urls,
@@ -22,6 +28,8 @@ class Fal(ProviderHttpClient):
     """Client for fal.ai queue-backed model APIs."""
 
     base_url = "https://queue.fal.run"
+    rest_url = "https://rest.fal.ai"
+    cdn_url = "https://v3.fal.media"
 
     def __init__(
         self,
@@ -40,6 +48,8 @@ class Fal(ProviderHttpClient):
         image: str | os.PathLike[str] | None = None,
         video: str | os.PathLike[str] | None = None,
         workflow: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Response:
         record = self.resources.stats.start("submit")
@@ -47,7 +57,7 @@ class Fal(ProviderHttpClient):
         image = self.prepare_media(image)
         video = self.prepare_media(video)
         body = self._payload(model, prompt, image, video, kwargs)
-        response = self._queue_submit(model, body, record.correlation_id)
+        response = self._queue_submit(model, body, record.correlation_id, headers=headers)
         request_id = self._request_id(response)
         self.resources.stats.update(
             record.correlation_id,
@@ -73,6 +83,8 @@ class Fal(ProviderHttpClient):
         image: str | os.PathLike[str] | None = None,
         video: str | os.PathLike[str] | None = None,
         workflow: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Response:
         record = self.resources.stats.start("submit_async")
@@ -80,7 +92,7 @@ class Fal(ProviderHttpClient):
         image = self.prepare_media(image)
         video = self.prepare_media(video)
         body = self._payload(model, prompt, image, video, kwargs)
-        response = self._queue_submit(model, body, record.correlation_id, webhook)
+        response = self._queue_submit(model, body, record.correlation_id, webhook, headers=headers)
         request_id = self._request_id(response)
         self.resources.stats.update(
             record.correlation_id,
@@ -131,6 +143,49 @@ class Fal(ProviderHttpClient):
             normalized_status = "cancelled"
         self.resources.stats.update(record.correlation_id, status=normalized_status, finish=True)
         return self._normalize(response, record.correlation_id, normalized_status, request_id)
+
+    def upload(
+        self,
+        data: bytes,
+        content_type: str,
+        file_name: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> str:
+        """Upload bytes to the fal CDN (v3, single part) and return the access URL.
+
+        Mirrors fal_client's `fal_v3` repository: exchange the API key for a
+        short-lived CDN token, then POST the raw bytes. Single-part only; the
+        SDK switches to multipart above 100 MB.
+        """
+        key = self._key_for_request()
+        token = self._raw_request(
+            "POST",
+            f"{self.rest_url}/storage/auth/token?storage_type=fal-cdn-v3",
+            json.dumps({}).encode(),
+            {"Authorization": f"Key {key}", "Content-Type": "application/json", "Accept": "application/json"},
+        )
+        upload_headers = {**(headers or {}), "Content-Type": content_type}
+        if file_name:
+            upload_headers["X-Fal-File-Name"] = file_name
+        upload_headers["Authorization"] = f"{token['token_type']} {token['token']}"
+        result = self._raw_request("POST", f"{self.cdn_url}/files/upload", data, upload_headers)
+        return str(result["access_url"])
+
+    def _raw_request(self, method: str, url: str, body: bytes, headers: dict[str, str]) -> Any:
+        self.resources.acquire()
+        self.resources.stats.begin_http()
+        try:
+            response = self.resources.pool.request(method, url, body=body, headers=headers, preload_content=True)
+        except urllib3.exceptions.HTTPError as error:
+            raise ProviderError("fal upload request failed") from error
+        finally:
+            self.resources.stats.end_http()
+            self.resources.release()
+        data = self._decode(response)
+        if response.status >= 400:
+            raise HttpProviderError(response.status, self._error_message(data), raw_response=data)
+        return data
 
     def _poll(
         self,
@@ -189,11 +244,12 @@ class Fal(ProviderHttpClient):
         body: dict[str, Any],
         correlation_id: str,
         webhook: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         url = f"{self.base_url}/{model}"
         if webhook is not None:
-            url = f"{url}?fal_webhook={webhook}"
-        return self._request("POST", url, correlation_id, "submit", body)
+            url = f"{url}?fal_webhook={quote(webhook, safe='')}"
+        return self._request("POST", url, correlation_id, "submit", body, headers)
 
     def _request(
         self,
@@ -202,8 +258,11 @@ class Fal(ProviderHttpClient):
         correlation_id: str,
         operation: str,
         body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> Any:
+        # Extra headers first so they can never override authentication.
         headers = {
+            **(extra_headers or {}),
             "Authorization": f"Key {self._key_for_request()}",
             "Content-Type": "application/json",
             "X-Correlation-ID": correlation_id,
