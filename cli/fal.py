@@ -101,6 +101,16 @@ class Fal(ProviderHttpClient):
         )
         return self._normalize(response, record.correlation_id, "queued", request_id, raw_request=body)
 
+    def _queue_root(self, model: str) -> str:
+        """Queue URL for follow-ups (status/result/cancel) on a request.
+
+        fal submits to the full endpoint (`fal-ai/flux/schnell`) but addresses
+        the queued request by app only (`fal-ai/flux`); keeping the subpath
+        returns 405. Same rule fal_client applies.
+        """
+        app = "/".join(model.strip("/").split("/")[:2])
+        return f"{self.base_url}/{app}"
+
     def status(self, model: str, request_id: str) -> Response:
         record = self.resources.stats.find_by_request_id(request_id)
         if record is None:
@@ -108,7 +118,7 @@ class Fal(ProviderHttpClient):
             self.resources.stats.update(record.correlation_id, request_id=request_id)
         response = self._request(
             "GET",
-            f"{self.base_url}/{model}/requests/{request_id}/status",
+            f"{self._queue_root(model)}/requests/{request_id}/status",
             record.correlation_id,
             "status",
         )
@@ -121,7 +131,7 @@ class Fal(ProviderHttpClient):
         if normalized_status == "completed":
             response = self._request(
                 "GET",
-                f"{self.base_url}/{model}/requests/{request_id}",
+                f"{self._queue_root(model)}/requests/{request_id}",
                 record.correlation_id,
                 "result",
             )
@@ -134,7 +144,7 @@ class Fal(ProviderHttpClient):
             self.resources.stats.update(record.correlation_id, request_id=request_id)
         response = self._request(
             "PUT",
-            f"{self.base_url}/{model}/requests/{request_id}/cancel",
+            f"{self._queue_root(model)}/requests/{request_id}/cancel",
             record.correlation_id,
             "cancel",
         )
@@ -197,9 +207,9 @@ class Fal(ProviderHttpClient):
         raw_request: Any = None,
     ) -> Response:
         if status_url is None:
-            status_url = f"{self.base_url}/{model}/requests/{request_id}/status"
+            status_url = f"{self._queue_root(model)}/requests/{request_id}/status"
         if response_url is None:
-            response_url = f"{self.base_url}/{model}/requests/{request_id}"
+            response_url = f"{self._queue_root(model)}/requests/{request_id}"
         deadline = time.monotonic() + self.config.poll_timeout
         while time.monotonic() < deadline:
             response = self._request(
