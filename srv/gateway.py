@@ -7,14 +7,16 @@ send a Google-signed ID token, so no request reaching this code is anonymous.
 
 Endpoints (JSON in, JSON out):
     GET  /health
-    POST /v1/{provider}/submit        blocking: submit, poll, return the result
-    POST /v1/{provider}/submit_async  queue with a webhook, return request_id
-    POST /v1/{provider}/status        status, plus the result once completed
-    POST /v1/{provider}/cancel
-    POST /v1/{provider}/upload        raw bytes body -> {"url": ...} (fal CDN)
+    POST /v1/submit        blocking: submit, poll, return the result
+    POST /v1/submit_async  queue with a webhook, return request_id
+    POST /v1/status        status, plus the result once completed
+    POST /v1/cancel
+    POST /v1/upload        raw bytes body -> {"url": ...} (fal CDN)
 
-Request bodies carry the provider payload verbatim in `input` (workflow "raw"),
-so callers keep full control of model-specific fields such as `image_urls`.
+JSON bodies name the target in `provider` and carry the provider payload
+verbatim in `input` (workflow "raw"), so callers keep full control of
+model-specific fields such as `image_urls`. `upload` has a raw-bytes body, so
+it takes the provider as a `?provider=` query parameter instead.
 
 Keys: `{PROVIDER}_KEYS` (comma-separated) or `{PROVIDER}_KEY`/`{PROVIDER}_API_KEY`.
 Each logical request is pinned to ONE key, because fal queue status/result/
@@ -211,6 +213,7 @@ def on_owning_key(pool: KeyPool, ref: str | None, call) -> tuple[str, Response]:
 
 
 class SubmitBody(BaseModel):
+    provider: str
     model: str
     input: dict[str, Any] = Field(default_factory=dict)
     webhook: str | None = None
@@ -219,6 +222,7 @@ class SubmitBody(BaseModel):
 
 
 class FollowUpBody(BaseModel):
+    provider: str
     model: str
     request_id: str
     key_ref: str | None = None
@@ -270,9 +274,9 @@ def health() -> dict[str, Any]:
     return {"ok": True, "providers": {name: len(pool_for(name).keys) for name in PROVIDERS}}
 
 
-@app.post("/v1/{provider}/submit")
-def submit(provider: str, body: SubmitBody) -> dict[str, Any]:
-    pool = pool_for(provider)
+@app.post("/v1/submit")
+def submit(body: SubmitBody) -> dict[str, Any]:
+    pool = pool_for(body.provider)
 
     def call(adapter):
         if body.timeout is not None:
@@ -285,28 +289,28 @@ def submit(provider: str, body: SubmitBody) -> dict[str, Any]:
         return adapter.submit(body.model, workflow=RAW_WORKFLOW, headers=body.headers, **body.input)
 
     key, response = with_failover(pool, call)
-    log.info(f"Submit(provider={provider} model={body.model} request_id={response.request_id} status={response.status})")
+    log.info(f"Submit(provider={pool.provider} model={body.model} request_id={response.request_id} status={response.status})")
     return serialize(pool.provider, body.model, key, response)
 
 
-@app.post("/v1/{provider}/submit_async")
-def submit_async(provider: str, body: SubmitBody) -> dict[str, Any]:
+@app.post("/v1/submit_async")
+def submit_async(body: SubmitBody) -> dict[str, Any]:
     if not body.webhook:
         raise GatewayError(400, "webhook is required for submit_async")
-    pool = pool_for(provider)
+    pool = pool_for(body.provider)
     key, response = with_failover(
         pool,
         lambda adapter: adapter.submit_async(
             body.model, body.webhook, workflow=RAW_WORKFLOW, headers=body.headers, **body.input
         ),
     )
-    log.info(f"SubmitAsync(provider={provider} model={body.model} request_id={response.request_id})")
+    log.info(f"SubmitAsync(provider={pool.provider} model={body.model} request_id={response.request_id})")
     return serialize(pool.provider, body.model, key, response)
 
 
-@app.post("/v1/{provider}/status")
-def status(provider: str, body: FollowUpBody) -> dict[str, Any]:
-    pool = pool_for(provider)
+@app.post("/v1/status")
+def status(body: FollowUpBody) -> dict[str, Any]:
+    pool = pool_for(body.provider)
     try:
         key, response = on_owning_key(pool, body.key_ref, lambda a: a.status(body.model, body.request_id))
     except HttpProviderError as error:
@@ -330,17 +334,18 @@ def status(provider: str, body: FollowUpBody) -> dict[str, Any]:
     return serialize(pool.provider, body.model, key, response)
 
 
-@app.post("/v1/{provider}/cancel")
-def cancel(provider: str, body: FollowUpBody) -> dict[str, Any]:
-    pool = pool_for(provider)
+@app.post("/v1/cancel")
+def cancel(body: FollowUpBody) -> dict[str, Any]:
+    pool = pool_for(body.provider)
     key, response = on_owning_key(pool, body.key_ref, lambda a: a.cancel(body.model, body.request_id))
     return serialize(pool.provider, body.model, key, response)
 
 
-@app.post("/v1/{provider}/upload")
+@app.post("/v1/upload")
 async def upload(provider: str, request: Request) -> dict[str, Any]:
     """Re-host bytes on the provider CDN. Body is the raw file; Cloud Run caps it at 32 MB.
 
+    Provider comes from the `?provider=` query parameter, since the body is raw bytes.
     Optional headers: `X-File-Name`, `X-Fal-Object-Lifecycle-Preference`.
     """
     pool = pool_for(provider)
@@ -360,5 +365,5 @@ async def upload(provider: str, request: Request) -> dict[str, Any]:
         )
 
     key, url = await to_thread.run_sync(call)
-    log.info(f"Upload(provider={provider} bytes={len(data)} type={content_type})")
+    log.info(f"Upload(provider={pool.provider} bytes={len(data)} type={content_type})")
     return {"provider": pool.provider, "url": url, "key_ref": key_ref(key)}

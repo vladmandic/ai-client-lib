@@ -53,12 +53,14 @@ service `ai-client` (callers send a Google ID token; no anonymous access).
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `GET /health` | – | key counts per provider |
-| `POST /v1/{provider}/submit` | `{model, input, headers?, timeout?}` | blocks until done; normalized response with `result` |
-| `POST /v1/{provider}/submit_async` | `{model, input, webhook, headers?}` | `{request_id, status: "queued", key_ref}` |
-| `POST /v1/{provider}/status` | `{model, request_id, key_ref?}` | status, plus `result` once completed; failed jobs return `status: "failed"` |
-| `POST /v1/{provider}/cancel` | `{model, request_id, key_ref?}` | normalized response |
-| `POST /v1/{provider}/upload` | raw bytes (`Content-Type`, optional `X-File-Name`) | `{url}` on the provider CDN (≤ 32 MB) |
+| `POST /v1/submit` | `{provider, model, input, headers?, timeout?}` | blocks until done; normalized response with `result` |
+| `POST /v1/submit_async` | `{provider, model, input, webhook, headers?}` | `{request_id, status: "queued", key_ref}` |
+| `POST /v1/status` | `{provider, model, request_id, key_ref?}` | status, plus `result` once completed; failed jobs return `status: "failed"` |
+| `POST /v1/cancel` | `{provider, model, request_id, key_ref?}` | normalized response |
+| `POST /v1/upload?provider=fal` | raw bytes (`Content-Type`, optional `X-File-Name`) | `{url}` on the provider CDN (≤ 32 MB) |
 
+- `provider` (e.g. `"fal"`) selects the adapter; unknown providers return 404.
+  `upload` takes it as a query parameter because its body is raw bytes.
 - `input` is the provider payload verbatim (workflow `raw`).
 - Keys: `FAL_KEYS` (comma-separated) from Secret Manager. Each request is pinned
   to one key; submissions fail over to another key on account-level errors
