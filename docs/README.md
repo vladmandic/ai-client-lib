@@ -12,3 +12,4 @@
 - [kie](kie.md)
 - [byteplus](byteplus.md)
 - [pixverse](pixverse.md)
+- [luma](luma.md)

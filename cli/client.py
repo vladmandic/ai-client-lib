@@ -8,6 +8,7 @@ from .byteplus import BytePlus
 from .core import ClientConfig, ProviderPoolRegistry
 from .fal import Fal
 from .kie import Kie
+from .luma import Luma
 from .pixverse import Pixverse
 
 PROVIDERS = {
@@ -15,6 +16,7 @@ PROVIDERS = {
     "kie": Kie,
     "pixverse": Pixverse,
     "byteplus": BytePlus,
+    "luma": Luma,
 }
 
 

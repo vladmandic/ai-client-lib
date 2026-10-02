@@ -5,6 +5,7 @@ from .client import Client
 from .core import CapabilityError, ClientConfig, ProviderError, Response
 from .fal import Fal
 from .kie import Kie
+from .luma import Luma
 from .pixverse import Pixverse
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
 	"ClientConfig",
 	"Fal",
 	"Kie",
+	"Luma",
 	"Pixverse",
 	"ProviderError",
 	"Response",

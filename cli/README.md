@@ -8,6 +8,7 @@ Capabilities are inferred from workflow tokens in the model name or specified vi
 
 | Provider | Workflows currently supported | Unsupported | Verified / Implementation details |
 | --- | --- | --- | --- |
+| Luma Agents | `text-to-image`, `image-to-image` / `edit`, `text-to-video`, `image-to-video`; synchronous `submit` (with polling), `status` | `submit_async` (webhooks), `cancel`, `video-to-video` | Uses `POST /v1/generations` and status polling `GET /v1/generations/{id}`. Local images are sent as base64 data; requires `LUMA_API_KEY`. |
 | fal.ai | `text-to-image`, `image-to-image`, `edit`, `text-to-video`, `image-to-video`, `video-to-video`; synchronous `submit` (with polling), async `submit_async` (`?fal_webhook=`), `status`, `cancel` | Raw CDN upload endpoint (uses data URIs for local files) | Uses queue endpoints `POST /{model}`, status polling `GET /{model}/requests/{request_id}/status`, result retrieval `GET /{model}/requests/{request_id}`, cancel `PUT /{model}/requests/{request_id}/cancel`. |
 | KIE | `text-to-image`, `image-to-image`, `edit`, `text-to-video`, `image-to-video`, `video-to-video`; synchronous `submit` (with polling), async `submit_async` (`callBackUrl`), `status` | `cancel` (cancellation is not documented by KIE) | Uses `POST /api/v1/jobs/createTask` and status polling `GET /api/v1/jobs/recordInfo?taskId=`. Automatically uploads local media files to `POST https://kieai.redpandaai.co/api/file-stream-upload`. |
 | PixVerse | `text-to-video`, `image-to-video`; synchronous `submit` (with polling), `status` | `text-to-image`, `image-to-image`, `submit_async` (webhooks), `cancel` | Uses `POST /video/text/generate` and `POST /video/img/generate`, status polling `GET /video/result/{video_id}` with `Ai-trace-id`. Image-to-video requires an uploaded `img_id` passed in `kwargs`. |
@@ -66,12 +67,13 @@ with Client(provider="fal", api_key="...", config=config) as client:
 Direct provider classes can also be instantiated directly:
 
 ```python
-from cli import Fal, Kie, Pixverse, BytePlus
+from cli import Fal, Kie, Luma, Pixverse, BytePlus
 
 fal_client = Fal(api_key="...")
 kie_client = Kie(api_key="...")
 pixverse_client = Pixverse(api_key="...")
 byteplus_client = BytePlus(api_key="...", base_url="https://ark.ap-southeast.bytepluses.com/api/v3")
+luma_client = Luma(api_key="...")
 ```
 
 #### BytePlus Files API
@@ -180,6 +182,7 @@ When a list is provided, a random key is chosen for each logical request and reu
 - `KIE_API_KEY`
 - `PIXVERSE_API_KEY`
 - `BYTEPLUS_API_KEY`
+- `LUMA_API_KEY`
 
 Keys are redacted and never appear in logs, exception messages, normalized responses, or statistics records.
 

@@ -9,10 +9,11 @@ This directory contains standalone smoke test scripts and session logs for each 
 - `test.kie`: Direct `Kie` provider CLI test runner
 - `test.byteplus`: Direct `BytePlus` provider CLI test runner
 - `test.pixverse`: Direct `Pixverse` provider CLI test runner
+- `test.luma`: Direct `Luma` provider CLI test runner
 
 ## Running Tests
 
-Ensure your virtual environment is activated and the corresponding provider API key is set in your environment (e.g. `FAL_API_KEY`, `KIE_API_KEY`, `BYTEPLUS_API_KEY`, `PIXVERSE_API_KEY`).
+Ensure your virtual environment is activated and the corresponding provider API key is set in your environment (e.g. `FAL_API_KEY`, `KIE_API_KEY`, `BYTEPLUS_API_KEY`, `PIXVERSE_API_KEY`, `LUMA_API_KEY`).
 
 Example:
 
@@ -29,3 +30,4 @@ Per-provider session logs and example outputs are recorded in:
 - [fal.md](fal.md)
 - [byteplus.md](byteplus.md)
 - [pixverse.md](pixverse.md)
+- [luma.md](luma.md)

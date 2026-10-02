@@ -1,5 +1,17 @@
 # Test Unified Client
 
+## Luma smoke tests (credit-limited)
+
+Text-to-image:
+
+> `python -m test.client --provider luma --model uni-1 --workflow t2i --prompt "A small red fox resting beside a clear alpine stream in early morning light, natural wildlife photography" --output tmp/luma-t2i.png --kwargs '{"aspect_ratio":"1:1","output_format":"png"}'`
+
+Image-to-image using `samples/natgeo.jpg`:
+
+> `python -m test.client --provider luma --model uni-1 --workflow i2i --image samples/natgeo.jpg --prompt "Add soft golden-hour sunlight and a subtle warm haze while preserving the wildlife and natural setting" --output tmp/luma-i2i.png --kwargs '{"output_format":"jpeg"}'`
+
+Both requests reached the Luma API and returned `402: Not enough credits to continue.` No generated media was returned, so neither requested output file could be saved to `tmp/`.
+
 ## t2i submit synchronous
 
 > python -m test.client --provider kie --model z-image --output samples/output-kie.png --prompt "sylish arcane-style photo of a model on a beach" --kwargs '{ "nsfw_checker": false, "aspect_ratio": "16:9" }'
