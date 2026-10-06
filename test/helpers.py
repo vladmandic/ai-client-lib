@@ -40,6 +40,22 @@ def save_images(images: list[Any], output_path: str | os.PathLike[str]) -> None:
         log.info(f'Output: path="{indexed_path}" index={idx} ')
 
 
+def save_media_bytes(items: list[bytes], output_path: str | os.PathLike[str]) -> None:
+    """Save raw media bytes to an output path or indexed paths if multiple items."""
+    if not items:
+        return
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if len(items) == 1:
+        out_path.write_bytes(items[0])
+        log.info(f'Output: path="{out_path}"')
+        return
+    for idx, item in enumerate(items):
+        indexed_path = out_path.parent / f"{out_path.stem}_{idx}{out_path.suffix}"
+        indexed_path.write_bytes(item)
+        log.info(f'Output: path="{indexed_path}" index={idx} ')
+
+
 def process_response(client: Any, response: Any, output_path: str | os.PathLike[str] | None) -> None:
     log.info(f"Response: {response}")
     log.info(f"Media URL: {response.media_url}")
@@ -48,7 +64,10 @@ def process_response(client: Any, response: Any, output_path: str | os.PathLike[
         _images = response.images
         log.info(f'Media: items={len(_bytes)} bytes={[len(b) for b in _bytes]} images={_images} save={output_path is not None}')
         if output_path:
-            save_images(_images, output_path)
+            if _images:
+                save_images(_images, output_path)
+            else:
+                save_media_bytes(_bytes, output_path)
 
     log.debug(f"Response JSON: {json.dumps(response.as_dict(), indent=2)}")
 

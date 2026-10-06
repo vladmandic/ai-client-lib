@@ -12,6 +12,8 @@ Image-to-image using `samples/natgeo.jpg`:
 
 Both requests reached the Luma API and returned `402: Not enough credits to continue.` No generated media was returned, so neither requested output file could be saved to `tmp/`.
 
+Text-to-video used `ray-3.2` with the documented five-second default and no input-video argument. Dynamic prompt: "A red kite whips and twists in strong coastal gusts above crashing waves; the camera tracks along the shoreline as spray bursts upward, then pulls back to reveal a lighthouse in shifting sea mist." The request returned `402: Not enough credits to continue.`, so no MP4 could be saved to `tmp/luma-t2v.mp4`.
+
 ## t2i submit synchronous
 
 > python -m test.client --provider kie --model z-image --output samples/output-kie.png --prompt "sylish arcane-style photo of a model on a beach" --kwargs '{ "nsfw_checker": false, "aspect_ratio": "16:9" }'

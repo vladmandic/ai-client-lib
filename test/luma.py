@@ -21,7 +21,7 @@ def main() -> None:
     parser.add_argument("--image", default=None, help="Optional image URL or local path")
     parser.add_argument("--video", default=None, help="Optional video URL or local path")
     parser.add_argument("--workflow", default=None, help="Optional workflow override")
-    parser.add_argument("--output", default=None, help="Optional output path to save PIL image")
+    parser.add_argument("--output", default=None, help="Optional output path to save generated media")
     parser.add_argument("--kwargs", default="{}", type=parse_kwargs, help='Optional custom kwargs as a JSON object string')
     args = parser.parse_args()
 
