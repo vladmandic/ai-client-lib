@@ -59,10 +59,12 @@ service `ai-client` (callers send a Google ID token; no anonymous access).
 | `POST /v1/cancel` | `{provider, model, request_id, key_ref?}` | normalized response |
 | `POST /v1/upload?provider=fal` | raw bytes (`Content-Type`, optional `X-File-Name`) | `{url}` on the provider CDN (≤ 32 MB) |
 
-- `provider` (e.g. `"fal"`) selects the adapter; unknown providers return 404.
-  `upload` takes it as a query parameter because its body is raw bytes.
-- `input` is the provider payload verbatim (workflow `raw`).
-- Keys: `FAL_KEYS` (comma-separated) from Secret Manager. Each request is pinned
+- `provider` (`"fal"` or `"kie"`) selects the adapter; unknown providers return 404.
+  `upload` takes it as a query parameter because its body is raw bytes (fal only).
+- `input` is the provider payload verbatim (workflow `raw`). kie requires `prompt`
+  in `input`, and kie `cancel` returns 400 (not supported by KIE).
+- Keys: `{PROVIDER}_KEYS` (comma-separated) from Secret Manager: `FAL_KEYS` is
+  required, `KIE_KEYS` is mounted when the secret exists. Each request is pinned
   to one key; submissions fail over to another key on account-level errors
   (locked / exhausted balance / 401), quarantining the dead key for 10 minutes.
   Follow-ups use `key_ref` when given, else try every key.

@@ -43,7 +43,10 @@ INVOKERS=(
     "cloud-run-invoker@${PROJECT_ID}.iam.gserviceaccount.com"
 )
 # Secrets already exist per project; the gateway reads them, callers no longer need them.
-SECRETS="FAL_KEYS=FAL_KEYS:latest"
+# FAL_KEYS is required. Other providers' `{PROVIDER}_KEYS` secrets are mounted
+# when they exist in the project; without one the provider reports 0 keys.
+REQUIRED_SECRETS=(FAL_KEYS)
+OPTIONAL_SECRETS=(KIE_KEYS)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -55,11 +58,25 @@ IMAGE_BASE="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 
+SECRET_NAMES=("${REQUIRED_SECRETS[@]}")
+for secret in "${OPTIONAL_SECRETS[@]}"; do
+    if gcloud secrets describe "$secret" --project="$PROJECT_ID" >/dev/null 2>&1; then
+        SECRET_NAMES+=("$secret")
+    else
+        echo "NOTE: secret $secret not found in $PROJECT_ID; deploying without it."
+    fi
+done
+SECRETS=""
+for secret in "${SECRET_NAMES[@]}"; do
+    SECRETS="${SECRETS:+${SECRETS},}${secret}=${secret}:latest"
+done
+
 echo "============================================"
 echo "Deploying ${SERVICE_NAME} (${ENV})"
 echo "  Project: ${PROJECT_ID} (${PROJECT_NUMBER})"
 echo "  Region:  ${REGION}"
 echo "  Image:   ${IMAGE_BASE}:${IMAGE_TAG}"
+echo "  Secrets: ${SECRETS}"
 echo "============================================"
 
 echo "Step 1: runtime service account + secret access..."
@@ -67,16 +84,18 @@ gcloud iam service-accounts describe "$RUNTIME_SA" --project="$PROJECT_ID" >/dev
     gcloud iam service-accounts create "$RUNTIME_SA_NAME" \
         --display-name="AI client gateway runtime" --project="$PROJECT_ID"
 # A just-created service account takes a few seconds to become visible to IAM.
-for attempt in 1 2 3 4 5 6; do
-    if gcloud secrets add-iam-policy-binding FAL_KEYS \
-        --member="serviceAccount:${RUNTIME_SA}" \
-        --role="roles/secretmanager.secretAccessor" \
-        --project="$PROJECT_ID" --quiet >/dev/null; then
-        break
-    fi
-    [ "$attempt" = 6 ] && exit 1
-    echo "  service account not visible yet; retrying in 10s..."
-    sleep 10
+for secret in "${SECRET_NAMES[@]}"; do
+    for attempt in 1 2 3 4 5 6; do
+        if gcloud secrets add-iam-policy-binding "$secret" \
+            --member="serviceAccount:${RUNTIME_SA}" \
+            --role="roles/secretmanager.secretAccessor" \
+            --project="$PROJECT_ID" --quiet >/dev/null; then
+            break
+        fi
+        [ "$attempt" = 6 ] && exit 1
+        echo "  service account not visible yet; retrying in 10s..."
+        sleep 10
+    done
 done
 
 echo "Step 2: build image..."
