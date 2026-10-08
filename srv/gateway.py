@@ -51,6 +51,7 @@ from cli.core import (
     Response,
 )
 from cli.fal import Fal
+from cli.kie import Kie
 
 from .logger import log
 
@@ -60,9 +61,12 @@ if not log.handlers and not logging.getLogger().handlers:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s %(message)s")
 log.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
-# Only fal is wired: it is the only provider Echonos calls today. Adding one is
-# an entry here plus its key env var — the adapters already share one interface.
-PROVIDERS: dict[str, type] = {"fal": Fal}
+# Adding a provider is an entry here plus its `{PROVIDER}_KEYS` secret in
+# deploy/deploy_gateway.sh — the adapters already share one interface.
+PROVIDERS: dict[str, type] = {"fal": Fal, "kie": Kie}
+# fal addresses status/cancel by app as well as request id; the other adapters
+# take the request id alone.
+_MODEL_SCOPED_FOLLOW_UPS = {"fal"}
 
 # Account-level failures: the KEY is dead (locked, out of balance, revoked),
 # not the request. Mirrors Echonos-Backend pipeline_utils/fal_keys.py.
@@ -227,6 +231,16 @@ class FollowUpBody(BaseModel):
     request_id: str
     key_ref: str | None = None
 
+    def args(self) -> tuple[str, ...]:
+        if self.provider.lower() in _MODEL_SCOPED_FOLLOW_UPS:
+            return (self.model, self.request_id)
+        return (self.request_id,)
+
+
+def header_kwargs(headers: dict[str, str] | None) -> dict[str, Any]:
+    """`headers` is a fal keyword; other adapters would fold it into the payload."""
+    return {"headers": headers} if headers else {}
+
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
@@ -285,8 +299,8 @@ def submit(body: SubmitBody) -> dict[str, Any]:
             with PROVIDERS[pool.provider](
                 api_key=adapter.api_keys[0], config=replace(CONFIG, poll_timeout=body.timeout)
             ) as scoped:
-                return scoped.submit(body.model, workflow=RAW_WORKFLOW, headers=body.headers, **body.input)
-        return adapter.submit(body.model, workflow=RAW_WORKFLOW, headers=body.headers, **body.input)
+                return scoped.submit(body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input)
+        return adapter.submit(body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input)
 
     key, response = with_failover(pool, call)
     log.info(f"Submit(provider={pool.provider} model={body.model} request_id={response.request_id} status={response.status})")
@@ -301,7 +315,7 @@ def submit_async(body: SubmitBody) -> dict[str, Any]:
     key, response = with_failover(
         pool,
         lambda adapter: adapter.submit_async(
-            body.model, body.webhook, workflow=RAW_WORKFLOW, headers=body.headers, **body.input
+            body.model, body.webhook, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input
         ),
     )
     log.info(f"SubmitAsync(provider={pool.provider} model={body.model} request_id={response.request_id})")
@@ -312,7 +326,7 @@ def submit_async(body: SubmitBody) -> dict[str, Any]:
 def status(body: FollowUpBody) -> dict[str, Any]:
     pool = pool_for(body.provider)
     try:
-        key, response = on_owning_key(pool, body.key_ref, lambda a: a.status(body.model, body.request_id))
+        key, response = on_owning_key(pool, body.key_ref, lambda a: a.status(*body.args()))
     except HttpProviderError as error:
         # fal reports a failed job as COMPLETED on /status and returns the
         # error from the result fetch. Surface it as a failed job, not a
@@ -337,7 +351,7 @@ def status(body: FollowUpBody) -> dict[str, Any]:
 @app.post("/v1/cancel")
 def cancel(body: FollowUpBody) -> dict[str, Any]:
     pool = pool_for(body.provider)
-    key, response = on_owning_key(pool, body.key_ref, lambda a: a.cancel(body.model, body.request_id))
+    key, response = on_owning_key(pool, body.key_ref, lambda a: a.cancel(*body.args()))
     return serialize(pool.provider, body.model, key, response)
 
 
