@@ -23,6 +23,14 @@ Each logical request is pinned to ONE key, because fal queue status/result/
 cancel only succeed with the key that submitted. Responses carry an opaque
 `key_ref` so callers can route follow-up calls back to that key; without it,
 follow-ups try every key.
+
+Named key pools: a body may set `key_pool` (e.g. "paradise") to bill a request
+to a dedicated account instead of the provider's default pool. The pool's keys
+come from `{PROVIDER}_KEYS_{POOL}` (e.g. FAL_KEYS_PARADISE). A named pool never
+falls back to the default pool: with no keys configured it returns 503, so a
+request meant for a dedicated account can never bill the shared one. Follow-ups
+must send the same `key_pool` as the submit. Responses echo `key_pool` (null for
+the default pool) so callers can check that the gateway honoured it.
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ import hashlib
 import logging
 import os
 import random
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -104,26 +113,39 @@ def is_key_error(error: Exception) -> bool:
     return any(marker in message for marker in _KEY_ERROR_MARKERS)
 
 
-class KeyPool:
-    """Configured keys for one provider, with temporary bad-key quarantine."""
+_POOL_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
 
-    def __init__(self, provider: str, keys: list[str]):
+
+class KeyPool:
+    """Configured keys for one provider (optionally a named pool), with temporary bad-key quarantine."""
+
+    def __init__(self, provider: str, keys: list[str], name: str | None = None):
         self.provider = provider
+        self.name = name
         self.keys = keys
         self._bad: dict[str, float] = {}
         self._adapters: dict[str, Any] = {}
         self._lock = threading.Lock()
 
+    @property
+    def label(self) -> str:
+        return f"{self.provider}:{self.name}" if self.name else self.provider
+
     @classmethod
-    def from_env(cls, provider: str) -> KeyPool:
+    def from_env(cls, provider: str, name: str | None = None) -> KeyPool:
         prefix = provider.upper()
-        raw = (
-            os.environ.get(f"{prefix}_KEYS")
-            or os.environ.get(f"{prefix}_KEY")
-            or os.environ.get(f"{prefix}_API_KEY")
-            or ""
-        )
-        return cls(provider, [k.strip() for k in raw.split(",") if k.strip()])
+        if name:
+            # Named pools read exactly one variable; the default pool's
+            # variables are never consulted (no fallback to shared keys).
+            raw = os.environ.get(f"{prefix}_KEYS_{name.upper()}") or ""
+        else:
+            raw = (
+                os.environ.get(f"{prefix}_KEYS")
+                or os.environ.get(f"{prefix}_KEY")
+                or os.environ.get(f"{prefix}_API_KEY")
+                or ""
+            )
+        return cls(provider, [k.strip() for k in raw.split(",") if k.strip()], name)
 
     def adapter(self, key: str) -> Any:
         """One long-lived adapter per key, so each carries exactly one key."""
@@ -134,7 +156,7 @@ class KeyPool:
 
     def healthy(self) -> list[str]:
         if not self.keys:
-            raise GatewayError(503, f"no {self.provider} keys configured")
+            raise GatewayError(503, f"no {self.label} keys configured")
         now = time.monotonic()
         with self._lock:
             healthy = [k for k in self.keys if now - self._bad.get(k, -_BAD_KEY_TTL_SEC) >= _BAD_KEY_TTL_SEC]
@@ -145,30 +167,45 @@ class KeyPool:
     def mark_bad(self, key: str) -> None:
         with self._lock:
             self._bad[key] = time.monotonic()
-        log.error(f"KeyPool(provider={self.provider} key_ref={key_ref(key)} quarantined={_BAD_KEY_TTL_SEC}s)")
+        log.error(f"KeyPool(pool={self.label} key_ref={key_ref(key)} quarantined={_BAD_KEY_TTL_SEC}s)")
 
     def ordered_for(self, ref: str | None) -> list[str]:
         """All keys, the one matching `ref` first."""
         return sorted(self.keys, key=lambda k: key_ref(k) != ref)
 
 
-_pools: dict[str, KeyPool] = {}
+_pools: dict[tuple[str, str | None], KeyPool] = {}
 _pools_lock = threading.Lock()
 
 
-def pool_for(provider: str) -> KeyPool:
+def pool_for(provider: str, key_pool: str | None = None) -> KeyPool:
     provider = provider.lower()
     if provider not in PROVIDERS:
         raise GatewayError(404, f"unsupported provider: {provider}")
+    if key_pool is not None and not _POOL_NAME.match(key_pool):
+        raise GatewayError(400, f"invalid key_pool: {key_pool!r} (expected [a-z0-9_]{{1,32}})")
     with _pools_lock:
-        if provider not in _pools:
-            _pools[provider] = KeyPool.from_env(provider)
-        return _pools[provider]
+        if (provider, key_pool) not in _pools:
+            _pools[(provider, key_pool)] = KeyPool.from_env(provider, key_pool)
+        return _pools[(provider, key_pool)]
 
 
-def serialize(provider: str, model: str, key: str, response: Response) -> dict[str, Any]:
+def named_pools() -> dict[str, int]:
+    """Named pools configured in the environment, as {"provider:pool": key count}."""
+    found: dict[str, int] = {}
+    for provider in PROVIDERS:
+        prefix = f"{provider.upper()}_KEYS_"
+        for var in os.environ:
+            name = var[len(prefix):].lower() if var.startswith(prefix) else ""
+            if _POOL_NAME.match(name):
+                found[f"{provider}:{name}"] = len(pool_for(provider, name).keys)
+    return found
+
+
+def serialize(pool: KeyPool, model: str, key: str, response: Response) -> dict[str, Any]:
     body = {
-        "provider": provider,
+        "provider": pool.provider,
+        "key_pool": pool.name,
         "model": model,
         "request_id": response.request_id,
         "status": response.status,
@@ -197,13 +234,13 @@ def with_failover(pool: KeyPool, call) -> tuple[str, Response]:
                 raise
             pool.mark_bad(key)
             last = error
-    raise GatewayError(503, f"all {len(keys)} {pool.provider} keys failed with account-level errors: {last}")
+    raise GatewayError(503, f"all {len(keys)} {pool.label} keys failed with account-level errors: {last}")
 
 
 def on_owning_key(pool: KeyPool, ref: str | None, call) -> tuple[str, Response]:
     """Run a follow-up (status/cancel) on the key that owns the request."""
     if not pool.keys:
-        raise GatewayError(503, f"no {pool.provider} keys configured")
+        raise GatewayError(503, f"no {pool.label} keys configured")
     last: Exception | None = None
     for key in pool.ordered_for(ref):
         try:
@@ -223,6 +260,7 @@ class SubmitBody(BaseModel):
     webhook: str | None = None
     headers: dict[str, str] | None = None
     timeout: float | None = Field(default=None, gt=0, le=3600)
+    key_pool: str | None = None
 
 
 class FollowUpBody(BaseModel):
@@ -230,6 +268,7 @@ class FollowUpBody(BaseModel):
     model: str
     request_id: str
     key_ref: str | None = None
+    key_pool: str | None = None
 
     def args(self) -> tuple[str, ...]:
         if self.provider.lower() in _MODEL_SCOPED_FOLLOW_UPS:
@@ -247,6 +286,8 @@ async def _lifespan(_: FastAPI):
     to_thread.current_default_thread_limiter().total_tokens = THREAD_LIMIT
     for provider in PROVIDERS:
         log.info(f"Gateway(provider={provider} keys={len(pool_for(provider).keys)})")
+    for label, count in named_pools().items():
+        log.info(f"Gateway(pool={label} keys={count})")
     yield
 
 
@@ -285,12 +326,16 @@ def _provider_error(_, error: ProviderError):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "providers": {name: len(pool_for(name).keys) for name in PROVIDERS}}
+    return {
+        "ok": True,
+        "providers": {name: len(pool_for(name).keys) for name in PROVIDERS},
+        "key_pools": named_pools(),
+    }
 
 
 @app.post("/v1/submit")
 def submit(body: SubmitBody) -> dict[str, Any]:
-    pool = pool_for(body.provider)
+    pool = pool_for(body.provider, body.key_pool)
 
     def call(adapter):
         if body.timeout is not None:
@@ -303,28 +348,28 @@ def submit(body: SubmitBody) -> dict[str, Any]:
         return adapter.submit(body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input)
 
     key, response = with_failover(pool, call)
-    log.info(f"Submit(provider={pool.provider} model={body.model} request_id={response.request_id} status={response.status})")
-    return serialize(pool.provider, body.model, key, response)
+    log.info(f"Submit(pool={pool.label} model={body.model} request_id={response.request_id} status={response.status})")
+    return serialize(pool, body.model, key, response)
 
 
 @app.post("/v1/submit_async")
 def submit_async(body: SubmitBody) -> dict[str, Any]:
     if not body.webhook:
         raise GatewayError(400, "webhook is required for submit_async")
-    pool = pool_for(body.provider)
+    pool = pool_for(body.provider, body.key_pool)
     key, response = with_failover(
         pool,
         lambda adapter: adapter.submit_async(
             body.model, body.webhook, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input
         ),
     )
-    log.info(f"SubmitAsync(provider={pool.provider} model={body.model} request_id={response.request_id})")
-    return serialize(pool.provider, body.model, key, response)
+    log.info(f"SubmitAsync(pool={pool.label} model={body.model} request_id={response.request_id})")
+    return serialize(pool, body.model, key, response)
 
 
 @app.post("/v1/status")
 def status(body: FollowUpBody) -> dict[str, Any]:
-    pool = pool_for(body.provider)
+    pool = pool_for(body.provider, body.key_pool)
     try:
         key, response = on_owning_key(pool, body.key_ref, lambda a: a.status(*body.args()))
     except HttpProviderError as error:
@@ -335,6 +380,7 @@ def status(body: FollowUpBody) -> dict[str, Any]:
             raise
         return {
             "provider": pool.provider,
+            "key_pool": pool.name,
             "model": body.model,
             "request_id": body.request_id,
             "status": "failed",
@@ -345,24 +391,25 @@ def status(body: FollowUpBody) -> dict[str, Any]:
             "media_urls": [],
             "key_ref": body.key_ref,
         }
-    return serialize(pool.provider, body.model, key, response)
+    return serialize(pool, body.model, key, response)
 
 
 @app.post("/v1/cancel")
 def cancel(body: FollowUpBody) -> dict[str, Any]:
-    pool = pool_for(body.provider)
+    pool = pool_for(body.provider, body.key_pool)
     key, response = on_owning_key(pool, body.key_ref, lambda a: a.cancel(*body.args()))
-    return serialize(pool.provider, body.model, key, response)
+    return serialize(pool, body.model, key, response)
 
 
 @app.post("/v1/upload")
-async def upload(provider: str, request: Request) -> dict[str, Any]:
+async def upload(provider: str, request: Request, key_pool: str | None = None) -> dict[str, Any]:
     """Re-host bytes on the provider CDN. Body is the raw file; Cloud Run caps it at 32 MB.
 
-    Provider comes from the `?provider=` query parameter, since the body is raw bytes.
+    Provider (and optional key pool) come from the `?provider=` / `?key_pool=`
+    query parameters, since the body is raw bytes.
     Optional headers: `X-File-Name`, `X-Fal-Object-Lifecycle-Preference`.
     """
-    pool = pool_for(provider)
+    pool = pool_for(provider, key_pool)
     if not hasattr(PROVIDERS[pool.provider], "upload"):
         raise GatewayError(400, f"{pool.provider} does not support upload")
     data = await request.body()
@@ -379,5 +426,5 @@ async def upload(provider: str, request: Request) -> dict[str, Any]:
         )
 
     key, url = await to_thread.run_sync(call)
-    log.info(f"Upload(provider={pool.provider} bytes={len(data)} type={content_type})")
-    return {"provider": pool.provider, "url": url, "key_ref": key_ref(key)}
+    log.info(f"Upload(pool={pool.label} bytes={len(data)} type={content_type})")
+    return {"provider": pool.provider, "key_pool": pool.name, "url": url, "key_ref": key_ref(key)}

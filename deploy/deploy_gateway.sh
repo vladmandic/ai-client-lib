@@ -47,6 +47,11 @@ INVOKERS=(
 # when they exist in the project; without one the provider reports 0 keys.
 REQUIRED_SECRETS=(FAL_KEYS)
 OPTIONAL_SECRETS=(KIE_KEYS)
+# Named key pools (`key_pool` in request bodies): ENV_VAR=SECRET_NAME, mounted
+# when the secret exists. The gateway reads pool "<name>" from
+# {PROVIDER}_KEYS_<NAME>. paradise = the dedicated fal account Max Seedance
+# bills to (secret predates the gateway, hence the different name).
+OPTIONAL_POOL_SECRETS=(FAL_KEYS_PARADISE=PARADISE_FAL_KEY)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -58,17 +63,25 @@ IMAGE_BASE="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 
-SECRET_NAMES=("${REQUIRED_SECRETS[@]}")
-for secret in "${OPTIONAL_SECRETS[@]}"; do
+# Each mount is ENV_VAR=SECRET_NAME; most secrets share their env var's name.
+SECRET_MOUNTS=()
+for secret in "${REQUIRED_SECRETS[@]}"; do
+    SECRET_MOUNTS+=("${secret}=${secret}")
+done
+for mount in "${OPTIONAL_SECRETS[@]}" "${OPTIONAL_POOL_SECRETS[@]}"; do
+    [[ "$mount" == *=* ]] || mount="${mount}=${mount}"
+    secret="${mount#*=}"
     if gcloud secrets describe "$secret" --project="$PROJECT_ID" >/dev/null 2>&1; then
-        SECRET_NAMES+=("$secret")
+        SECRET_MOUNTS+=("$mount")
     else
         echo "NOTE: secret $secret not found in $PROJECT_ID; deploying without it."
     fi
 done
+SECRET_NAMES=()
 SECRETS=""
-for secret in "${SECRET_NAMES[@]}"; do
-    SECRETS="${SECRETS:+${SECRETS},}${secret}=${secret}:latest"
+for mount in "${SECRET_MOUNTS[@]}"; do
+    SECRET_NAMES+=("${mount#*=}")
+    SECRETS="${SECRETS:+${SECRETS},}${mount}:latest"
 done
 
 echo "============================================"

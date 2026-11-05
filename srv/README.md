@@ -68,6 +68,12 @@ service `ai-client` (callers send a Google ID token; no anonymous access).
   to one key; submissions fail over to another key on account-level errors
   (locked / exhausted balance / 401), quarantining the dead key for 10 minutes.
   Follow-ups use `key_ref` when given, else try every key.
+- Named key pools: any body (or `?key_pool=` on upload) may set `key_pool`, e.g.
+  `"paradise"`, to bill the request to a dedicated account. Keys come from
+  `{PROVIDER}_KEYS_{POOL}` (`FAL_KEYS_PARADISE`, mounted from the `PARADISE_FAL_KEY`
+  secret). A named pool never falls back to the default pool: no keys → 503.
+  Follow-ups must send the same `key_pool` as the submit. Every response echoes
+  `key_pool` (`null` = default pool); `/health` lists named pools under `key_pools`.
 - Provider errors keep the provider's HTTP status (`provider_status` in the body).
 
 ```bash
