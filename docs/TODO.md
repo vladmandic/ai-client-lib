@@ -3,7 +3,7 @@
 ## Status and validation
 
 - Live smoke tests executed and verified for Fal (`t2i`, `i2i`), KIE (`t2i`, `i2i`), BytePlus (`t2i`, `i2i`), and PixVerse (`t2v`) under `test/*.md`.
-- PixVerse image-to-video (`i2v`) live validation requires testing with pre-uploaded `img_id`.
+- PixVerse image-to-video (`i2v`), transition and reference-to-video need live validation (image URLs are now uploaded by the adapter).
 - Confirm provider response schemas, status transitions, retry behavior, rate limits, and result URL expiration in live calls.
 - Reconcile any live API differences with the provider notes and capability matrix.
 
@@ -25,10 +25,10 @@
 
 ### PixVerse
 
-- Implement native async callback handling if the PixVerse API documents webhook submission.
+- Live-test C1 `image-to-video`, `transition` and `reference-to-video` and a signed webhook delivery on the staging account (unit tests only so far).
+- Confirm C1's maximum image references and any duration-per-quality limits on the img endpoint.
 - Implement cancellation if the PixVerse API documents it.
-- Add local image upload handling instead of requiring callers to provide `img_id` in `kwargs`.
-- Verify model-specific parameter constraints, account limits, and result URL retention.
+- Verify account limits (concurrency per account) and result URL retention.
 
 ### BytePlus
 
