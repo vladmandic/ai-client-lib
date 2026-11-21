@@ -46,12 +46,20 @@ INVOKERS=(
 # FAL_KEYS is required. Other providers' `{PROVIDER}_KEYS` secrets are mounted
 # when they exist in the project; without one the provider reports 0 keys.
 REQUIRED_SECRETS=(FAL_KEYS)
-OPTIONAL_SECRETS=(KIE_KEYS)
+# PIXVERSE_WEBHOOK_ID: the webhook registered at platform.pixverse.ai/webhook for
+# the default PixVerse account (async submits send it; see srv/gateway.py).
+OPTIONAL_SECRETS=(KIE_KEYS PIXVERSE_KEYS PIXVERSE_WEBHOOK_ID)
 # Named key pools (`key_pool` in request bodies): ENV_VAR=SECRET_NAME, mounted
 # when the secret exists. The gateway reads pool "<name>" from
 # {PROVIDER}_KEYS_<NAME>. paradise = the dedicated fal account Max Seedance
 # bills to (secret predates the gateway, hence the different name).
-OPTIONAL_POOL_SECRETS=(FAL_KEYS_PARADISE=PARADISE_FAL_KEY)
+# free_video = the PixVerse account the PIXVERSE campaign's free videos bill to
+# (PixVerse pays for them), with its own console webhook.
+OPTIONAL_POOL_SECRETS=(
+    FAL_KEYS_PARADISE=PARADISE_FAL_KEY
+    PIXVERSE_KEYS_FREE_VIDEO=PIXVERSE_KEYS_FREE_VIDEO
+    PIXVERSE_WEBHOOK_ID_FREE_VIDEO=PIXVERSE_WEBHOOK_ID_FREE_VIDEO
+)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"

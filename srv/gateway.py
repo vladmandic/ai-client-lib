@@ -31,6 +31,13 @@ falls back to the default pool: with no keys configured it returns 503, so a
 request meant for a dedicated account can never bill the shared one. Follow-ups
 must send the same `key_pool` as the submit. Responses echo `key_pool` (null for
 the default pool) so callers can check that the gateway honoured it.
+
+PixVerse: `model` names the workflow (`c1/image-to-video`, `c1/transition`,
+`c1/reference-to-video`); see cli/pixverse.py for the `input` URL conveniences.
+PixVerse calls back a webhook registered in its console, not a per-request URL,
+so `submit_async` sends the pool's `PIXVERSE_WEBHOOK_ID` (named pool:
+`PIXVERSE_WEBHOOK_ID_{POOL}`, again with no fallback) unless `input` carries a
+`webhook_id`; the body's `webhook` URL is still required but not sent.
 """
 
 from __future__ import annotations
@@ -61,6 +68,7 @@ from cli.core import (
 )
 from cli.fal import Fal
 from cli.kie import Kie
+from cli.pixverse import Pixverse
 
 from .logger import log
 
@@ -72,10 +80,12 @@ log.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 # Adding a provider is an entry here plus its `{PROVIDER}_KEYS` secret in
 # deploy/deploy_gateway.sh — the adapters already share one interface.
-PROVIDERS: dict[str, type] = {"fal": Fal, "kie": Kie}
+PROVIDERS: dict[str, type] = {"fal": Fal, "kie": Kie, "pixverse": Pixverse}
 # fal addresses status/cancel by app as well as request id; the other adapters
 # take the request id alone.
 _MODEL_SCOPED_FOLLOW_UPS = {"fal"}
+# Adapters with no `headers` keyword; any other keyword lands in their payload.
+_NO_HEADER_PROVIDERS = {"pixverse"}
 
 # Account-level failures: the KEY is dead (locked, out of balance, revoked),
 # not the request. Mirrors Echonos-Backend pipeline_utils/fal_keys.py.
@@ -107,7 +117,8 @@ def key_ref(key: str) -> str:
 
 
 def is_key_error(error: Exception) -> bool:
-    if isinstance(error, HttpProviderError) and error.status_code == 401:
+    # 401 bad key; 402 out of balance (PixVerse ErrCode 500090, cli/pixverse.py).
+    if isinstance(error, HttpProviderError) and error.status_code in (401, 402):
         return True
     message = str(error).lower()
     return any(marker in message for marker in _KEY_ERROR_MARKERS)
@@ -276,9 +287,26 @@ class FollowUpBody(BaseModel):
         return (self.request_id,)
 
 
-def header_kwargs(headers: dict[str, str] | None) -> dict[str, Any]:
+def header_kwargs(headers: dict[str, str] | None, provider: str = "fal") -> dict[str, Any]:
     """`headers` is a fal keyword; other adapters would fold it into the payload."""
-    return {"headers": headers} if headers else {}
+    if not headers or provider in _NO_HEADER_PROVIDERS:
+        return {}
+    return {"headers": headers}
+
+
+def async_input(pool: KeyPool, body_input: dict[str, Any]) -> dict[str, Any]:
+    """Provider-specific additions to an async submit's `input`.
+
+    PixVerse: the console webhook the pool's account calls back. Read per call
+    (not cached) so a new id only needs an env change, like keys.
+    """
+    if pool.provider != "pixverse" or body_input.get("webhook_id"):
+        return body_input
+    var = f"PIXVERSE_WEBHOOK_ID_{pool.name.upper()}" if pool.name else "PIXVERSE_WEBHOOK_ID"
+    webhook_id = (os.environ.get(var) or "").strip()
+    if not webhook_id:
+        raise GatewayError(503, f"no {var} configured for {pool.label} callbacks")
+    return {**body_input, "webhook_id": webhook_id}
 
 
 @asynccontextmanager
@@ -344,8 +372,12 @@ def submit(body: SubmitBody) -> dict[str, Any]:
             with PROVIDERS[pool.provider](
                 api_key=adapter.api_keys[0], config=replace(CONFIG, poll_timeout=body.timeout)
             ) as scoped:
-                return scoped.submit(body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input)
-        return adapter.submit(body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input)
+                return scoped.submit(
+                    body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers, pool.provider), **body.input
+                )
+        return adapter.submit(
+            body.model, workflow=RAW_WORKFLOW, **header_kwargs(body.headers, pool.provider), **body.input
+        )
 
     key, response = with_failover(pool, call)
     log.info(f"Submit(pool={pool.label} model={body.model} request_id={response.request_id} status={response.status})")
@@ -357,10 +389,12 @@ def submit_async(body: SubmitBody) -> dict[str, Any]:
     if not body.webhook:
         raise GatewayError(400, "webhook is required for submit_async")
     pool = pool_for(body.provider, body.key_pool)
+    body_input = async_input(pool, body.input)
     key, response = with_failover(
         pool,
         lambda adapter: adapter.submit_async(
-            body.model, body.webhook, workflow=RAW_WORKFLOW, **header_kwargs(body.headers), **body.input
+            body.model, body.webhook, workflow=RAW_WORKFLOW, **header_kwargs(body.headers, pool.provider),
+            **body_input,
         ),
     )
     log.info(f"SubmitAsync(pool={pool.label} model={body.model} request_id={response.request_id})")

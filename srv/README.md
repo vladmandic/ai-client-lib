@@ -59,19 +59,27 @@ service `ai-client` (callers send a Google ID token; no anonymous access).
 | `POST /v1/cancel` | `{provider, model, request_id, key_ref?}` | normalized response |
 | `POST /v1/upload?provider=fal` | raw bytes (`Content-Type`, optional `X-File-Name`) | `{url}` on the provider CDN (≤ 32 MB) |
 
-- `provider` (`"fal"` or `"kie"`) selects the adapter; unknown providers return 404.
+- `provider` (`"fal"`, `"kie"` or `"pixverse"`) selects the adapter; unknown providers return 404.
+- PixVerse: `model` names the workflow (`c1/image-to-video`, `c1/transition`,
+  `c1/reference-to-video`), and `input` may carry image URLs instead of PixVerse
+  image ids (see `docs/pixverse.md`). PixVerse calls back the webhook registered in
+  its console, so `submit_async` sends the pool's `PIXVERSE_WEBHOOK_ID` (named pool:
+  `PIXVERSE_WEBHOOK_ID_{POOL}`, no fallback; missing -> 503) and never the body's
+  `webhook` URL. Request `headers` are not sent to PixVerse. Callbacks must be
+  verified with `cli.pixverse.verify_webhook_signature`.
   `upload` takes it as a query parameter because its body is raw bytes (fal only).
 - `input` is the provider payload verbatim (workflow `raw`). kie requires `prompt`
   in `input`, and kie `cancel` returns 400 (not supported by KIE).
 - Keys: `{PROVIDER}_KEYS` (comma-separated) from Secret Manager: `FAL_KEYS` is
   required, `KIE_KEYS` is mounted when the secret exists. Each request is pinned
   to one key; submissions fail over to another key on account-level errors
-  (locked / exhausted balance / 401), quarantining the dead key for 10 minutes.
+  (locked / exhausted balance / 401 / 402), quarantining the dead key for 10 minutes.
   Follow-ups use `key_ref` when given, else try every key.
 - Named key pools: any body (or `?key_pool=` on upload) may set `key_pool`, e.g.
   `"paradise"`, to bill the request to a dedicated account. Keys come from
   `{PROVIDER}_KEYS_{POOL}` (`FAL_KEYS_PARADISE`, mounted from the `PARADISE_FAL_KEY`
-  secret). A named pool never falls back to the default pool: no keys → 503.
+  secret; `PIXVERSE_KEYS_FREE_VIDEO` + `PIXVERSE_WEBHOOK_ID_FREE_VIDEO` for the
+  PIXVERSE campaign's free videos). A named pool never falls back to the default pool: no keys → 503.
   Follow-ups must send the same `key_pool` as the submit. Every response echoes
   `key_pool` (`null` = default pool); `/health` lists named pools under `key_pools`.
 - Provider errors keep the provider's HTTP status (`provider_status` in the body).
