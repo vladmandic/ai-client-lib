@@ -10,6 +10,7 @@ from .fal import Fal
 from .kie import Kie
 from .luma import Luma
 from .pixverse import Pixverse
+from .vidilab import Vidilab
 
 PROVIDERS = {
     "fal": Fal,
@@ -17,6 +18,7 @@ PROVIDERS = {
     "pixverse": Pixverse,
     "byteplus": BytePlus,
     "luma": Luma,
+    "vidilab": Vidilab,
 }
 
 

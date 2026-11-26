@@ -11,3 +11,4 @@ uv
 rich
 ruff
 pylint
+pytest

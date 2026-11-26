@@ -1,5 +1,7 @@
 # Test Unified Client
 
+VidLab's documented model/workflow smoke tests and saved outputs are tracked in [vidilab.md](vidilab.md).
+
 ## Luma smoke tests (credit-limited)
 
 Text-to-image:

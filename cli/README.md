@@ -13,6 +13,7 @@ Capabilities are inferred from workflow tokens in the model name or specified vi
 | KIE | `text-to-image`, `image-to-image`, `edit`, `text-to-video`, `image-to-video`, `video-to-video`; synchronous `submit` (with polling), async `submit_async` (`callBackUrl`), `status` | `cancel` (cancellation is not documented by KIE) | Uses `POST /api/v1/jobs/createTask` and status polling `GET /api/v1/jobs/recordInfo?taskId=`. Automatically uploads local media files to `POST https://kieai.redpandaai.co/api/file-stream-upload`. |
 | PixVerse | `text-to-video`, `image-to-video`; synchronous `submit` (with polling), `status` | `text-to-image`, `image-to-image`, `submit_async` (webhooks), `cancel` | Uses `POST /video/text/generate` and `POST /video/img/generate`, status polling `GET /video/result/{video_id}` with `Ai-trace-id`. Image-to-video requires an uploaded `img_id` passed in `kwargs`. |
 | BytePlus | Image workflows (`text-to-image`, `image-to-image`, `edit`) via synchronous `submit`; Seedance video workflows (`text-to-video`, `image-to-video`, `video-to-video`) via `submit` (with polling), async `submit_async` (`callback_url`), `status`, `cancel`; ModelArk Files API (`upload_file`, `upload_url`, `get_file`, `delete_file`) | Image `submit_async` webhooks (image generation is synchronous); local video files (video inputs require public URLs) | Uses ModelArk `POST /images/generations` for image workflows and `POST /contents/generations/tasks` for Seedance video tasks. Files API methods available on `BytePlus` adapter. Configurable `base_url`. |
+| VidLab | `text-to-image`, `image-to-image`, `text-to-video`, `image-to-video`; synchronous `submit` (with long polling), async `submit_async` (`webhook_url`), `status` | `cancel`, `video-to-video` | Uses `POST /v1/generations`, `GET /v1/generations/{id}?wait=...`, and `POST /v1/uploads` for local media. Supports `nano-banana-2`, `gpt-image-2`, `seedance-2.5-flash`, `wan-3.0`, and `kling-4.0`. |
 
 ## Public API
 
@@ -67,13 +68,14 @@ with Client(provider="fal", api_key="...", config=config) as client:
 Direct provider classes can also be instantiated directly:
 
 ```python
-from cli import Fal, Kie, Luma, Pixverse, BytePlus
+from cli import Fal, Kie, Luma, Pixverse, BytePlus, Vidilab
 
 fal_client = Fal(api_key="...")
 kie_client = Kie(api_key="...")
 pixverse_client = Pixverse(api_key="...")
 byteplus_client = BytePlus(api_key="...", base_url="https://ark.ap-southeast.bytepluses.com/api/v3")
 luma_client = Luma(api_key="...")
+vidilab_client = Vidilab(api_key="...")
 ```
 
 #### BytePlus Files API
@@ -183,6 +185,7 @@ When a list is provided, a random key is chosen for each logical request and reu
 - `PIXVERSE_API_KEY`
 - `BYTEPLUS_API_KEY`
 - `LUMA_API_KEY`
+- `VIDILAB_API_KEY`
 
 Keys are redacted and never appear in logs, exception messages, normalized responses, or statistics records.
 
@@ -224,6 +227,7 @@ except ProviderError as err:
 - [`docs/kie.md`](../docs/kie.md): KIE Market task creation, automatic uploads, and model schemas.
 - [`docs/pixverse.md`](../docs/pixverse.md): PixVerse video endpoints, trace IDs, and parameters.
 - [`docs/byteplus.md`](../docs/byteplus.md): BytePlus ModelArk image/video generation and Files API.
+- [`docs/vidilab.md`](../docs/vidilab.md): VidLab image/video generation and webhook API.
 
 ## Install
 

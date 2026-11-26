@@ -13,3 +13,4 @@
 - [byteplus](byteplus.md)
 - [pixverse](pixverse.md)
 - [luma](luma.md)
+- [vidilab](vidilab.md)

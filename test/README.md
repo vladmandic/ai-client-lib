@@ -10,6 +10,7 @@ This directory contains standalone smoke test scripts and session logs for each 
 - `test.byteplus`: Direct `BytePlus` provider CLI test runner
 - `test.pixverse`: Direct `Pixverse` provider CLI test runner
 - `test.luma`: Direct `Luma` provider CLI test runner
+- `test.vidilab`: VidLab unified client smoke-test runner
 
 ## Running Tests
 
@@ -31,3 +32,4 @@ Per-provider session logs and example outputs are recorded in:
 - [byteplus.md](byteplus.md)
 - [pixverse.md](pixverse.md)
 - [luma.md](luma.md)
+- [vidilab.md](vidilab.md)

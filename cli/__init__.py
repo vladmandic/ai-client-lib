@@ -7,6 +7,7 @@ from .fal import Fal
 from .kie import Kie
 from .luma import Luma
 from .pixverse import Pixverse
+from .vidilab import Vidilab
 
 __all__ = [
 	"BytePlus",
@@ -19,4 +20,5 @@ __all__ = [
 	"Pixverse",
 	"ProviderError",
 	"Response",
+	"Vidilab",
 ]
